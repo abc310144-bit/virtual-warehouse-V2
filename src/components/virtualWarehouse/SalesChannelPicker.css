@@ -1,0 +1,58 @@
+.sales-channel-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sales-channel-picker__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sales-channel-picker__label {
+  color: rgba(0, 0, 0, 0.88);
+  font-size: 14px;
+}
+
+.sales-channel-picker__name-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sales-channel-picker__name-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sales-channel-picker__select-all {
+  padding: 0 4px;
+  height: auto;
+}
+
+.sales-channel-picker__clear-all {
+  flex-shrink: 0;
+  color: #ff4d4f;
+}
+
+.sales-channel-picker__clear-all:disabled {
+  color: rgba(0, 0, 0, 0.25);
+}
+
+.sales-channel-picker__type-select,
+.sales-channel-picker__name-select {
+  width: 100%;
+}
+
+.sales-channel-picker__summary {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+
+.sales-channel-picker__summary-sub {
+  margin-left: 4px;
+}

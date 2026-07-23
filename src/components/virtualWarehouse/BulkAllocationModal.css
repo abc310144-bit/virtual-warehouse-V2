@@ -1,0 +1,58 @@
+.bulk-allocation-modal__location {
+  margin-bottom: 16px;
+}
+
+.bulk-allocation-modal__location-label {
+  display: block;
+  margin-bottom: 8px;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 14px;
+}
+
+.bulk-allocation-modal__location-select {
+  width: 280px;
+}
+
+.bulk-allocation-modal__location-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+
+.bulk-allocation-modal__location-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bulk-allocation-modal__field-label {
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 14px;
+}
+
+.bulk-allocation-modal__section-title {
+  margin-bottom: 8px;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.bulk-allocation-modal__qty-input {
+  width: 100%;
+}
+
+.bulk-allocation-modal__header-with-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bulk-allocation-modal__header-tip {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  cursor: help;
+}
+
+.bulk-allocation-modal__placeholder {
+  color: rgba(0, 0, 0, 0.45);
+}

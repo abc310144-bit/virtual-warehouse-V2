@@ -1,0 +1,950 @@
+const { useState, useEffect, useMemo, useCallback } = React;
+const {
+  Layout, Menu, Button, DatePicker, Input, InputNumber, Select, Table, ConfigProvider,
+  Modal, Drawer, Form, Space, Switch, message, Radio, Tooltip,
+} = antd;
+const {
+  UploadOutlined, FilterOutlined, SettingOutlined,
+  PlusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined,
+} = icons;
+const { Header, Sider, Content } = Layout;
+const { RangePicker } = DatePicker;
+
+dayjs.locale('zh-tw');
+
+// ─── 常數 ───────────────────────────────────────────────────────────────────
+const DEFAULT_FILTER = { viewMode: 'main', l2Id: null, l3Id: null };
+const EMPTY_ACCEPTANCE_FORM = {
+  use_tier_ratio: false,
+  flat_value: '',
+  tier_31_90: '',
+  tier_91_365: '',
+  tier_366_plus: '',
+};
+
+function normalizeAcceptanceSettings(form) {
+  if (!form) return undefined;
+  if (form.use_tier_ratio) {
+    const tier_31_90 = form.tier_31_90?.trim() || undefined;
+    const tier_91_365 = form.tier_91_365?.trim() || undefined;
+    const tier_366_plus = form.tier_366_plus?.trim() || undefined;
+    if (!tier_31_90 && !tier_91_365 && !tier_366_plus) return undefined;
+    return { use_tier_ratio: true, tier_31_90, tier_91_365, tier_366_plus };
+  }
+  const flat_value = form.flat_value?.trim() || undefined;
+  if (!flat_value) return undefined;
+  return { use_tier_ratio: false, flat_value };
+}
+function formatAcceptanceSummary(settings) {
+  if (!settings) return '-';
+  if (settings.use_tier_ratio) {
+    const parts = [settings.tier_31_90, settings.tier_91_365, settings.tier_366_plus].filter(Boolean);
+    return parts.length > 0 ? parts.join('｜') : '-';
+  }
+  return settings.flat_value || '-';
+}
+function isAcceptanceConfigured(form) {
+  return normalizeAcceptanceSettings(form) !== undefined;
+}
+function getMissingAcceptanceScopeLabels(values) {
+  const missing = [];
+  if (!isAcceptanceConfigured(values.acceptance_domestic)) missing.push('國內商品');
+  if (!isAcceptanceConfigured(values.acceptance_foreign)) missing.push('國外商品');
+  return missing;
+}
+function confirmMissingAcceptance(values) {
+  const missing = getMissingAcceptanceScopeLabels(values);
+  if (missing.length === 0) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title: '允收天數未設定',
+      content: (
+        <div style={{ whiteSpace: 'pre-line' }}>
+          {`目前尚未設定${missing.join('、')}的允收天數。`}
+          {'\n\n'}
+          商品若超過允收，商品不會自動回到總倉。
+          {'\n\n'}
+          是否仍要儲存？
+        </div>
+      ),
+      okText: '仍要儲存',
+      cancelText: '返回修改',
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+}
+function toFormAcceptance(settings) {
+  if (!settings) return { ...EMPTY_ACCEPTANCE_FORM };
+  if (settings.use_tier_ratio) {
+    return {
+      use_tier_ratio: true,
+      flat_value: '',
+      tier_31_90: settings.tier_31_90 ?? '',
+      tier_91_365: settings.tier_91_365 ?? '',
+      tier_366_plus: settings.tier_366_plus ?? '',
+    };
+  }
+  return {
+    use_tier_ratio: false,
+    flat_value: settings.flat_value ?? '',
+    tier_31_90: '',
+    tier_91_365: '',
+    tier_366_plus: '',
+  };
+}
+
+// ─── Mock 資料（來源：standalone/hierarchySeed.js + 下方 store） ─────────────
+
+const L2_STORE_KEY = 'vw-mock-l2-hubs';
+const L3_STORE_KEY = 'vw-mock-l3-channels';
+const MOCK_STORE_VERSION_KEY = 'vw-mock-store-version';
+const MOCK_STORE_VERSION = '2026-07-22-tw-department';
+
+function loadMockStore(key, initial) {
+  try {
+    if (localStorage.getItem(MOCK_STORE_VERSION_KEY) !== MOCK_STORE_VERSION) {
+      localStorage.removeItem(L2_STORE_KEY);
+      localStorage.removeItem(L3_STORE_KEY);
+      localStorage.setItem(MOCK_STORE_VERSION_KEY, MOCK_STORE_VERSION);
+    }
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    // ignore corrupted cache
+  }
+  return JSON.parse(JSON.stringify(initial));
+}
+
+function persistMockStores() {
+  localStorage.setItem(L2_STORE_KEY, JSON.stringify(l2Store));
+  localStorage.setItem(L3_STORE_KEY, JSON.stringify(l3Store));
+}
+
+let l2Store = loadMockStore(L2_STORE_KEY, INITIAL_L2_HUBS);
+let l3Store = loadMockStore(L3_STORE_KEY, INITIAL_L3_CHANNELS);
+const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+
+function countL3(hubId) { return l3Store.filter((c) => c.l2_hub_id === hubId).length; }
+function toListItem(hub) { return { ...hub, l3_channel_count: countL3(hub.id) }; }
+function bindL3(hubId, ids) {
+  l3Store = l3Store.map((c) => {
+    if (ids.includes(c.id)) return { ...c, l2_hub_id: hubId };
+    if (c.l2_hub_id === hubId && !ids.includes(c.id)) return { ...c, l2_hub_id: null };
+    return c;
+  });
+}
+
+const api = {
+  fetchL2Hubs: async () => { await delay(); return l2Store.map(toListItem); },
+  fetchL3Channels: async () => { await delay(); return JSON.parse(JSON.stringify(l3Store)); },
+  createL2Hub: async (p) => {
+    await delay();
+    const name = p.name.trim();
+    if (l2Store.some((h) => h.name === name)) return { success: false, error: { message: '通路分組名稱不可重複' } };
+    const hub = {
+      id: `l2-${Date.now()}`,
+      name,
+      acceptance_domestic: normalizeAcceptanceSettings(p.acceptance_domestic),
+      acceptance_foreign: normalizeAcceptanceSettings(p.acceptance_foreign),
+      status: p.status || 'active',
+      created_at: new Date().toISOString(),
+    };
+    l2Store = [...l2Store, hub];
+    bindL3(hub.id, p.l3_channel_ids ?? []);
+    persistMockStores();
+    return { success: true, data: toListItem(hub) };
+  },
+  updateL2Hub: async (p) => {
+    await delay();
+    const idx = l2Store.findIndex((h) => h.id === p.id);
+    if (idx === -1) return { success: false, error: { message: '找不到通路分組' } };
+    const name = p.name.trim();
+    if (l2Store.some((h) => h.name === name && h.id !== p.id)) return { success: false, error: { message: '通路分組名稱不可重複' } };
+    l2Store[idx] = {
+      ...l2Store[idx],
+      name,
+      acceptance_domestic: normalizeAcceptanceSettings(p.acceptance_domestic),
+      acceptance_foreign: normalizeAcceptanceSettings(p.acceptance_foreign),
+      status: p.status,
+      updated_at: new Date().toISOString(),
+    };
+    bindL3(p.id, p.l3_channel_ids ?? []);
+    persistMockStores();
+    return { success: true, data: toListItem(l2Store[idx]) };
+  },
+  deleteL2Hub: async (id) => {
+    await delay();
+    if (L2_HAS_INVENTORY.has(id)) return { success: false, error: { message: '此通路分組尚有剩餘庫存，無法刪除' } };
+    if (L2_HAS_ORDERS.has(id)) return { success: false, error: { message: '此通路分組尚有未完結訂單，無法刪除' } };
+    l3Store = l3Store.map((c) => (c.l2_hub_id === id ? { ...c, l2_hub_id: null } : c));
+    l2Store = l2Store.filter((h) => h.id !== id);
+    persistMockStores();
+    return { success: true };
+  },
+};
+
+// ─── 篩選邏輯 ───────────────────────────────────────────────────────────────
+function getBoundL3ByL2(l2Id, channels) {
+  return channels.filter((c) => c.l2_hub_id === l2Id);
+}
+function getActiveL3ByL2(l2Id, channels) {
+  return channels.filter((c) => c.status === 'active' && c.l2_hub_id === l2Id);
+}
+function shouldShowL3SalesChannelFilter(filter, channels, l2Hubs = []) {
+  if (filter.viewMode !== 'channel' || !filter.l2Id) return false;
+  const hub = l2Hubs.find((item) => item.id === filter.l2Id);
+  if (hub != null && hub.l3_channel_count === 0) return false;
+  return getBoundL3ByL2(filter.l2Id, channels).length > 0;
+}
+function buildL2GroupOptions(hubs) {
+  return hubs.filter((h) => h.status === 'active').map((h) => ({ value: h.id, label: h.name }));
+}
+function buildL3ChannelOptions(channels) {
+  return channels.map((c) => ({ value: c.id, label: c.name }));
+}
+
+function filterWarehouseTableData(data, filter) {
+  if (filter.viewMode === 'main') return data.filter((row) => row.viewScope !== 'channel');
+  if (!filter.l2Id) return [];
+  let rows = data.filter((row) => row.l2Id === filter.l2Id);
+  if (filter.l3Id) rows = rows.filter((row) => row.l3Id === filter.l3Id);
+  return rows;
+}
+
+function getSourceChannelLabel(filter, l2Hubs, l3Channels) {
+  if (filter.viewMode === 'main') return '總倉';
+  const l2 = l2Hubs.find((hub) => hub.id === filter.l2Id);
+  if (filter.l3Id) {
+    const l3 = l3Channels.find((channel) => channel.id === filter.l3Id);
+    return l3?.name ?? l2?.name ?? '通路';
+  }
+  return l2?.name ?? '通路';
+}
+
+function BulkAllocationHeaderTip({ title, tip }) {
+  return (
+    <span className="bulk-allocation-modal__header-with-tip">
+      {title}
+      <Tooltip title={tip}><InfoCircleOutlined className="bulk-allocation-modal__header-tip" /></Tooltip>
+    </span>
+  );
+}
+
+function getTargetLocationLabel(targetL2Id, targetL3Id, l2Hubs, l3Channels) {
+  if (!targetL2Id) return null;
+  if (targetL3Id) {
+    const l3 = l3Channels.find((channel) => channel.id === targetL3Id);
+    if (l3) return l3.name;
+  }
+  return l2Hubs.find((hub) => hub.id === targetL2Id)?.name ?? null;
+}
+
+function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, onClose, onConfirm }) {
+  const [targetL2Id, setTargetL2Id] = useState(null);
+  const [targetL3Id, setTargetL3Id] = useState(null);
+  const [quantities, setQuantities] = useState({});
+
+  const sourceChannelLabel = useMemo(
+    () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
+    [filter, l2Hubs, l3Channels],
+  );
+  const l2TargetOptions = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const targetFilter = useMemo(
+    () => ({ viewMode: 'channel', l2Id: targetL2Id, l3Id: targetL3Id }),
+    [targetL2Id, targetL3Id],
+  );
+  const showTargetL3Dropdown = shouldShowL3SalesChannelFilter(targetFilter, l3Channels, l2Hubs);
+  const l3TargetOptions = useMemo(() => {
+    if (!targetL2Id) return [];
+    return buildL3ChannelOptions(getActiveL3ByL2(targetL2Id, l3Channels));
+  }, [targetL2Id, l3Channels]);
+  const targetLocationLabel = useMemo(
+    () => getTargetLocationLabel(targetL2Id, targetL3Id, l2Hubs, l3Channels),
+    [targetL2Id, targetL3Id, l2Hubs, l3Channels],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setTargetL2Id(null);
+    setTargetL3Id(null);
+    setQuantities({});
+  }, [open]);
+
+  useEffect(() => {
+    if (!targetL2Id) {
+      if (targetL3Id !== null) setTargetL3Id(null);
+      return;
+    }
+    if (!showTargetL3Dropdown && targetL3Id !== null) {
+      setTargetL3Id(null);
+      return;
+    }
+    if (targetL3Id && !l3TargetOptions.some((option) => option.value === targetL3Id)) {
+      setTargetL3Id(null);
+    }
+  }, [targetL2Id, targetL3Id, showTargetL3Dropdown, l3TargetOptions]);
+
+  const handleTargetL2Change = (l2Id) => {
+    setTargetL2Id(l2Id ?? null);
+    setTargetL3Id(null);
+  };
+
+  const handleQtyChange = (rowKey, value) => {
+    setQuantities((prev) => ({ ...prev, [rowKey]: value }));
+  };
+
+  const hasValidTarget = Boolean(targetL2Id);
+
+  const canConfirm = useMemo(() => {
+    if (!hasValidTarget || selectedRows.length === 0) return false;
+    return selectedRows.every((row) => {
+      const qty = quantities[row.key];
+      return qty != null && qty > 0 && qty <= row.allocatableQty;
+    });
+  }, [hasValidTarget, selectedRows, quantities]);
+
+  const columns = [
+    { title: 'SKU', dataIndex: 'sku', width: 130 },
+    { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
+    { title: '效期_批號', dataIndex: 'expiryBatch', width: 130 },
+    { title: '來源通路', width: 120, render: () => sourceChannelLabel },
+    { title: '當前可配數', dataIndex: 'allocatableQty', width: 100, align: 'center' },
+    {
+      title: '配貨位置', width: 140,
+      render: () => targetLocationLabel || <span className="bulk-allocation-modal__placeholder">請選擇配貨位置</span>,
+    },
+    {
+      title: '配貨數量', width: 110,
+      render: (_, row) => (
+        <InputNumber className="bulk-allocation-modal__qty-input" min={1} max={row.allocatableQty || undefined}
+          precision={0} value={quantities[row.key] ?? null} disabled={!hasValidTarget || row.allocatableQty <= 0}
+          onChange={(value) => handleQtyChange(row.key, value)} />
+      ),
+    },
+    {
+      title: <BulkAllocationHeaderTip title="配貨前可分配數" tip="配貨至目標通路分組前，該商品於目標位置的可分配數量" />,
+      width: 130, align: 'center', render: () => 0,
+    },
+    {
+      title: <BulkAllocationHeaderTip title="配貨後可分配數" tip="配貨完成後，該商品於目標位置的可分配數量" />,
+      width: 130, align: 'center', render: (_, row) => quantities[row.key] ?? 0,
+    },
+  ];
+
+  return (
+    <Modal title="批量配貨" open={open} onCancel={onClose} width={1100} destroyOnClose
+      footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" disabled={!canConfirm} onClick={() => { onConfirm?.(); onClose(); }}>確認</Button></Space>}>
+      <div className="bulk-allocation-modal__location">
+        <span className="bulk-allocation-modal__location-label">配貨位置</span>
+        <div className="bulk-allocation-modal__location-fields">
+          <div className="bulk-allocation-modal__location-field">
+            <span className="bulk-allocation-modal__field-label">通路分組</span>
+            <Select className="bulk-allocation-modal__location-select" value={targetL2Id ?? undefined}
+              options={l2TargetOptions} onChange={handleTargetL2Change} placeholder="請選擇通路分組" allowClear />
+          </div>
+          {showTargetL3Dropdown && (
+            <div className="bulk-allocation-modal__location-field">
+              <span className="bulk-allocation-modal__field-label">銷售通路</span>
+              <Select className="bulk-allocation-modal__location-select" value={targetL3Id ?? undefined}
+                options={l3TargetOptions} onChange={setTargetL3Id} placeholder="請選擇銷售通路" allowClear />
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="bulk-allocation-modal__section-title">當前選擇資料</div>
+      <Table rowKey="key" columns={columns} dataSource={selectedRows} pagination={false} size="small" scroll={{ x: 980 }} />
+    </Modal>
+  );
+}
+
+function createAllocationLine() {
+  return {
+    id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    l2Id: null,
+    l3Id: null,
+    qty: null,
+  };
+}
+
+function AllocationLocationCell({ line, l2Hubs, l3Channels, onL2Change, onL3Change }) {
+  const rowFilter = useMemo(
+    () => ({ viewMode: 'channel', l2Id: line.l2Id, l3Id: line.l3Id }),
+    [line.l2Id, line.l3Id],
+  );
+  const showL3 = shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
+  const l2Options = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l3Options = useMemo(() => {
+    if (!line.l2Id) return [];
+    return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels));
+  }, [line.l2Id, l3Channels]);
+
+  return (
+    <div className="allocation-modal__location-cell">
+      <Select value={line.l2Id ?? undefined} options={l2Options} onChange={onL2Change}
+        placeholder="請選擇通路分組" allowClear />
+      {showL3 && (
+        <Select value={line.l3Id ?? undefined} options={l3Options} onChange={onL3Change}
+          placeholder="請選擇銷售通路" allowClear />
+      )}
+    </div>
+  );
+}
+
+function AllocationModal({ open, product, filter, l2Hubs, l3Channels, onClose, onConfirm }) {
+  const [lines, setLines] = useState([createAllocationLine()]);
+  const sourceChannelLabel = useMemo(
+    () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
+    [filter, l2Hubs, l3Channels],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setLines([createAllocationLine()]);
+  }, [open, product?.key]);
+
+  const updateLine = (lineId, patch) => {
+    setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
+  };
+
+  const maxQty = product?.allocatableQty ?? 0;
+
+  const canConfirm = useMemo(() => {
+    if (!product || maxQty <= 0) return false;
+    const validLines = lines.filter((line) => line.l2Id && line.qty != null && line.qty > 0 && line.qty <= maxQty);
+    if (validLines.length === 0) return false;
+    return validLines.reduce((sum, line) => sum + line.qty, 0) <= maxQty;
+  }, [product, maxQty, lines]);
+
+  const columns = [
+    {
+      title: '配貨位置', width: 220,
+      render: (_, line) => (
+        <AllocationLocationCell line={line} l2Hubs={l2Hubs} l3Channels={l3Channels}
+          onL2Change={(l2Id) => updateLine(line.id, { l2Id: l2Id ?? null, l3Id: null })}
+          onL3Change={(l3Id) => updateLine(line.id, { l3Id: l3Id ?? null })} />
+      ),
+    },
+    {
+      title: '配貨數量', width: 120,
+      render: (_, line) => (
+        <InputNumber className="allocation-modal__qty-input" min={1} max={maxQty || undefined} precision={0}
+          value={line.qty ?? null} disabled={!line.l2Id || maxQty <= 0}
+          onChange={(value) => updateLine(line.id, { qty: value })} />
+      ),
+    },
+    {
+      title: <BulkAllocationHeaderTip title="配貨前可分配數" tip="配貨至目標通路分組前，該商品於目標位置的可分配數量" />,
+      width: 130, align: 'center', render: () => 0,
+    },
+    {
+      title: <BulkAllocationHeaderTip title="配貨後可分配數" tip="配貨完成後，該商品於目標位置的可分配數量" />,
+      width: 130, align: 'center', render: (_, line) => line.qty ?? 0,
+    },
+    {
+      title: '', width: 48, align: 'center',
+      render: (_, line, index) => index === lines.length - 1 ? (
+        <Button type="text" icon={<PlusOutlined />} className="allocation-modal__add-row"
+          onClick={() => setLines((prev) => [...prev, createAllocationLine()])} />
+      ) : null,
+    },
+  ];
+
+  return (
+    <Modal title="配貨" open={open} onCancel={onClose} width={860} destroyOnClose
+      footer={<Space><Button onClick={onClose}>取消</Button>
+        <Button type="primary" disabled={!canConfirm} onClick={() => { onConfirm?.(); onClose(); }}>確認</Button></Space>}>
+      {product && (
+        <>
+          <div className="allocation-modal__summary">
+            <div className="allocation-modal__summary-item"><span className="allocation-modal__summary-label">SKU</span><span className="allocation-modal__summary-value">{product.sku}</span></div>
+            <div className="allocation-modal__summary-item"><span className="allocation-modal__summary-label">商品名稱</span><span className="allocation-modal__summary-value">{product.productName}</span></div>
+            <div className="allocation-modal__summary-item"><span className="allocation-modal__summary-label">效期_批號</span><span className="allocation-modal__summary-value">{product.expiryBatch}</span></div>
+            <div className="allocation-modal__summary-item"><span className="allocation-modal__summary-label">來源通路</span><span className="allocation-modal__summary-value">{sourceChannelLabel}</span></div>
+            <div className="allocation-modal__summary-item"><span className="allocation-modal__summary-label">當前可分配數</span><span className="allocation-modal__summary-value">{product.allocatableQty}</span></div>
+          </div>
+          <div className="allocation-modal__section-title">當前選擇資料</div>
+          <Table rowKey="id" columns={columns} dataSource={lines} pagination={false} size="small" />
+        </>
+      )}
+    </Modal>
+  );
+}
+
+function useL2L3CascadeFilter(l2Hubs, l3Channels) {
+  const [filter, setFilter] = useState(DEFAULT_FILTER);
+  const l2Options = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const activeL3ForL2 = useMemo(() => {
+    if (filter.viewMode !== 'channel' || !filter.l2Id) return [];
+    return getActiveL3ByL2(filter.l2Id, l3Channels);
+  }, [filter.viewMode, filter.l2Id, l3Channels]);
+  const l3Options = useMemo(() => buildL3ChannelOptions(activeL3ForL2), [activeL3ForL2]);
+
+  useEffect(() => {
+    if (filter.viewMode !== 'channel' || !filter.l2Id) return;
+    const hub = l2Hubs.find((item) => item.id === filter.l2Id);
+    const boundL3 = getBoundL3ByL2(filter.l2Id, l3Channels);
+    const activeL3 = getActiveL3ByL2(filter.l2Id, l3Channels);
+    const hasNoSalesChannel =
+      (hub != null && hub.l3_channel_count === 0) ||
+      boundL3.length === 0 ||
+      activeL3.length === 0;
+    if (hasNoSalesChannel) {
+      if (filter.l3Id !== null) setFilter((prev) => ({ ...prev, l3Id: null }));
+      return;
+    }
+    if (filter.l3Id && !activeL3.some((channel) => channel.id === filter.l3Id)) {
+      setFilter((prev) => ({ ...prev, l3Id: null }));
+    }
+  }, [filter.viewMode, filter.l2Id, filter.l3Id, l3Channels, l2Hubs]);
+
+  const handleViewModeChange = useCallback((viewMode) => {
+    if (viewMode === 'main') {
+      setFilter({ viewMode: 'main', l2Id: null, l3Id: null });
+      return;
+    }
+    setFilter({ viewMode: 'channel', l2Id: null, l3Id: null });
+  }, []);
+
+  const handleL2Change = useCallback((l2Id) => {
+    if (!l2Id) {
+      setFilter((prev) => ({ ...prev, viewMode: 'channel', l2Id: null, l3Id: null }));
+      return;
+    }
+    setFilter((prev) => ({
+      ...prev,
+      viewMode: 'channel',
+      l2Id,
+      l3Id: null,
+    }));
+  }, []);
+
+  const handleL3Change = useCallback((l3Id) => {
+    setFilter((prev) => ({ ...prev, viewMode: 'channel', l3Id }));
+  }, []);
+
+  return { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change };
+}
+
+function useL2HubManagement() {
+  const [l2Hubs, setL2Hubs] = useState([]);
+  const [l3Channels, setL3Channels] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [hubs, ch] = await Promise.all([api.fetchL2Hubs(), api.fetchL3Channels()]);
+      setL2Hubs(hubs);
+      setL3Channels(ch);
+    } finally { setLoading(false); }
+  }, []);
+  useEffect(() => { refresh(); }, [refresh]);
+  const detectConflicts = useCallback((ids, editingId) => {
+    return ids.reduce((acc, l3Id) => {
+      const ch = l3Channels.find((c) => c.id === l3Id);
+      if (!ch?.l2_hub_id || ch.l2_hub_id === editingId) return acc;
+      const from = l2Hubs.find((h) => h.id === ch.l2_hub_id);
+      if (from) acc.push({ l3Name: ch.name, fromL2Name: from.name });
+      return acc;
+    }, []);
+  }, [l3Channels, l2Hubs]);
+  const saveL2Hub = useCallback(async (values, editingId) => {
+    const payload = {
+      name: values.name.trim(),
+      l3_channel_ids: values.l3_channel_ids ?? [],
+      acceptance_domestic: normalizeAcceptanceSettings(values.acceptance_domestic),
+      acceptance_foreign: normalizeAcceptanceSettings(values.acceptance_foreign),
+      status: 'active',
+    };
+    const res = editingId ? await api.updateL2Hub({ id: editingId, ...payload }) : await api.createL2Hub(payload);
+    if (!res.success) { message.error(res.error.message); return false; }
+    message.success(editingId ? '通路分組已更新' : '通路分組已建立');
+    await refresh();
+    return true;
+  }, [refresh]);
+  const deleteL2Hub = useCallback(async (id) => {
+    const res = await api.deleteL2Hub(id);
+    if (!res.success) { message.error(res.error.message); return false; }
+    message.success('通路分組已刪除');
+    await refresh();
+    return true;
+  }, [refresh]);
+  return { l2Hubs, l3Channels, loading, saveL2Hub, deleteL2Hub, detectConflicts };
+}
+
+// ─── 組件 ───────────────────────────────────────────────────────────────────
+function HierarchyFilterPanel({ filter, l2Hubs, l2Options, l3Options, l3Channels, onViewModeChange, onL2Change, onL3Change }) {
+  const isChannelMode = filter.viewMode === 'channel';
+  const showL3Dropdown = shouldShowL3SalesChannelFilter(filter, l3Channels, l2Hubs);
+  return (
+    <div className="filter-field col-12 hierarchy-filter-panel hierarchy-filter-panel--embedded">
+      <span className="filter-label">虛擬倉</span>
+      <div className="hierarchy-filter-panel__controls">
+        <Radio.Group className="hierarchy-filter-panel__mode" value={filter.viewMode} onChange={(e) => onViewModeChange(e.target.value)}>
+          <Radio value="main">總倉</Radio>
+          <Radio value="channel">通路</Radio>
+        </Radio.Group>
+        {isChannelMode && (
+          <div className="hierarchy-filter-panel__channel-fields">
+            <div className="hierarchy-filter-panel__field">
+              <span className="hierarchy-filter-panel__label">通路分組</span>
+              <Select className="hierarchy-filter-panel__select" value={filter.l2Id ?? undefined} options={l2Options} onChange={onL2Change} placeholder="請選擇通路分組" allowClear />
+            </div>
+            {showL3Dropdown && (
+              <div className="hierarchy-filter-panel__field">
+                <span className="hierarchy-filter-panel__label">銷售通路</span>
+                <Select className="hierarchy-filter-panel__select" value={filter.l3Id ?? undefined} options={l3Options} onChange={onL3Change} placeholder="請選擇銷售通路" />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AcceptanceRuleFields({ title, prefix }) {
+  const tiers = [
+    { name: 'tier_31_90', label: '31-90天' },
+    { name: 'tier_91_365', label: '91-365天' },
+    { name: 'tier_366_plus', label: '366天以上' },
+  ];
+  return (
+    <div className="acceptance-rule-fields">
+      <div className="acceptance-rule-fields__heading">{title}</div>
+      <div className="acceptance-rule-fields__toggle-row">
+        <span className="acceptance-rule-fields__toggle-label">是否啟用總效期分級比例</span>
+        <Form.Item name={[prefix, 'use_tier_ratio']} noStyle>
+          <Radio.Group>
+            <Radio value={true}>是</Radio>
+            <Radio value={false}>否</Radio>
+          </Radio.Group>
+        </Form.Item>
+      </div>
+      <Form.Item noStyle shouldUpdate={(prev, cur) => prev?.[prefix]?.use_tier_ratio !== cur?.[prefix]?.use_tier_ratio}>
+        {({ getFieldValue }) => {
+          const useTierRatio = getFieldValue([prefix, 'use_tier_ratio']);
+          if (useTierRatio) {
+            return (
+              <div className="acceptance-rule-fields__tier-group">
+                {tiers.map(({ name, label }) => (
+                  <Form.Item key={name} name={[prefix, name]} label={label} className="acceptance-rule-fields__item">
+                    <Input placeholder="例如：2/3、2/5、1/3" allowClear />
+                  </Form.Item>
+                ))}
+              </div>
+            );
+          }
+          return (
+            <Form.Item name={[prefix, 'flat_value']} label="允收比例" className="acceptance-rule-fields__item">
+              <Input placeholder="例如：2/3、1/2、N、< 30天" allowClear />
+            </Form.Item>
+          );
+        }}
+      </Form.Item>
+    </div>
+  );
+}
+
+function isChannelTakenByOtherHub(channel, editingHubId) {
+  return channel.l2_hub_id != null && channel.l2_hub_id !== editingHubId;
+}
+
+function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) {
+  const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
+
+  const availableChannels = useMemo(
+    () => l3Channels.filter((channel) => channel.status === 'active' || channel.l2_hub_id === editingHubId),
+    [l3Channels, editingHubId],
+  );
+
+  const nameToChannel = useMemo(() => {
+    const map = new Map();
+    availableChannels.forEach((channel) => map.set(channel.name, channel));
+    return map;
+  }, [availableChannels]);
+
+  const currentType = getPartnerTypeByKey(partnerTypeKey);
+  const currentTypeChannelIds = useMemo(() => {
+    if (!currentType) return [];
+    return currentType.channels.map((name) => nameToChannel.get(name)?.id).filter(Boolean);
+  }, [currentType, nameToChannel]);
+
+  const nameOptions = useMemo(() => {
+    if (!currentType) return [];
+    return currentType.channels
+      .map((name) => nameToChannel.get(name))
+      .filter(Boolean)
+      .map((channel) => ({
+        value: channel.id,
+        label: isChannelTakenByOtherHub(channel, editingHubId)
+          ? `${channel.name}（已歸屬其他通路分組）`
+          : channel.name,
+        disabled: isChannelTakenByOtherHub(channel, editingHubId),
+      }));
+  }, [currentType, nameToChannel, editingHubId]);
+
+  const currentTypeSelectedCount = currentTypeChannelIds.filter((id) => value.includes(id)).length;
+
+  const handleSelectAllForType = (typeKey) => {
+    const type = getPartnerTypeByKey(typeKey);
+    if (!type) return;
+    const idsToAdd = type.channels
+      .map((name) => nameToChannel.get(name))
+      .filter(Boolean)
+      .filter((channel) => !isChannelTakenByOtherHub(channel, editingHubId))
+      .map((channel) => channel.id);
+    onChange?.([...new Set([...value, ...idsToAdd])]);
+  };
+
+  const handleNameChange = (nextIds) => {
+    const otherTypeIds = value.filter((id) => !currentTypeChannelIds.includes(id));
+    onChange?.([...otherTypeIds, ...nextIds]);
+  };
+
+  const selectedInCurrentType = value.filter((id) => currentTypeChannelIds.includes(id));
+
+  return (
+    <div className="sales-channel-picker">
+      <div className="sales-channel-picker__field">
+        <div className="sales-channel-picker__label">合作通路類型</div>
+        <Select
+          className="sales-channel-picker__type-select"
+          value={partnerTypeKey || undefined}
+          options={PARTNER_CHANNEL_CATALOG.map((type) => ({ value: type.key, label: type.label }))}
+          onChange={setPartnerTypeKey}
+        />
+      </div>
+      <div className="sales-channel-picker__field">
+        <div className="sales-channel-picker__name-header">
+          <div className="sales-channel-picker__label">通路名稱</div>
+          <div className="sales-channel-picker__name-actions">
+            <Button type="link" size="small" className="sales-channel-picker__select-all"
+              disabled={!currentType || currentType.channels.length === 0}
+              onClick={() => handleSelectAllForType(partnerTypeKey)}>全選</Button>
+            <Tooltip title="全部刪除">
+              <Button type="text" icon={<DeleteOutlined />} className="sales-channel-picker__clear-all"
+                disabled={value.length === 0} onClick={() => onChange?.([])} />
+            </Tooltip>
+          </div>
+        </div>
+        <Select mode="multiple" allowClear className="sales-channel-picker__name-select"
+          placeholder={currentType && currentType.channels.length === 0 ? '此類型尚無通路' : '選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'}
+          value={selectedInCurrentType} options={nameOptions} onChange={handleNameChange} optionFilterProp="label"
+          disabled={!currentType || currentType.channels.length === 0} />
+      </div>
+      <div className="sales-channel-picker__summary">
+        已選擇 {value.length} 個銷售通路
+        {currentType && currentType.channels.length > 0 && (
+          <span className="sales-channel-picker__summary-sub">（{currentType.label}：{currentTypeSelectedCount}/{currentType.channels.length}）</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose, onSubmit, detectConflicts }) {
+  const [form] = Form.useForm();
+  useEffect(() => {
+    if (!open) return;
+    if (editingHub) {
+      form.setFieldsValue({
+        name: editingHub.name,
+        l3_channel_ids: l3Channels.filter((c) => c.l2_hub_id === editingHub.id).map((c) => c.id),
+        acceptance_domestic: toFormAcceptance(editingHub.acceptance_domestic),
+        acceptance_foreign: toFormAcceptance(editingHub.acceptance_foreign),
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({
+        l3_channel_ids: [],
+        acceptance_domestic: { ...EMPTY_ACCEPTANCE_FORM },
+        acceptance_foreign: { ...EMPTY_ACCEPTANCE_FORM },
+      });
+    }
+  }, [open, editingHub, l3Channels, form]);
+
+  const handleFinish = async (values) => {
+    const acceptanceConfirmed = await confirmMissingAcceptance(values);
+    if (!acceptanceConfirmed) return;
+
+    const conflicts = detectConflicts(values.l3_channel_ids ?? [], editingHub?.id);
+    if (conflicts.length) {
+      const ok = await new Promise((resolve) => {
+        Modal.confirm({
+          title: '銷售通路轉移確認',
+          content: (
+            <div style={{ whiteSpace: 'pre-line' }}>
+              {conflicts.map((c) => `「${c.l3Name}」目前已屬於「${c.fromL2Name}」通路分組，儲存後將自動從「${c.fromL2Name}」移除並轉移至當前通路分組。`).join('\n')}
+              {'\n'}是否確認？
+            </div>
+          ),
+          okText: '確認轉移', cancelText: '取消',
+          onOk: () => resolve(true), onCancel: () => resolve(false),
+        });
+      });
+      if (!ok) return;
+    }
+    await onSubmit(values);
+  };
+
+  return (
+    <Drawer
+      title={editingHub ? '編輯通路分組' : '新增通路分組'}
+      width={560} open={open} onClose={onClose} destroyOnClose
+      footer={<Space style={{ float: 'right' }}><Button onClick={onClose}>取消</Button><Button type="primary" onClick={() => form.submit()}>儲存</Button></Space>}
+    >
+      <Form form={form} layout="vertical" onFinish={handleFinish}>
+        <Form.Item name="name" label="通路分組名稱" rules={[
+          { required: true, whitespace: true, message: '請輸入通路分組名稱' },
+          { validator: async (_, v) => { if (v?.trim() && existingNames.some((n) => n === v.trim() && n !== editingHub?.name)) throw new Error('名稱不可與其他通路分組重複'); } },
+        ]}>
+          <Input placeholder="例如：線上2C" maxLength={50} showCount />
+        </Form.Item>
+        <div className="l2-hub-form-drawer__section-title">允收天數</div>
+        <AcceptanceRuleFields title="國內商品" prefix="acceptance_domestic" />
+        <AcceptanceRuleFields title="國外商品" prefix="acceptance_foreign" />
+        <Form.Item name="l3_channel_ids" label="銷售通路" rules={[
+          { required: true, type: 'array', min: 1, message: '請至少選擇一個銷售通路' },
+        ]}>
+          <SalesChannelPicker l3Channels={l3Channels} editingHubId={editingHub?.id ?? null} />
+        </Form.Item>
+      </Form>
+    </Drawer>
+  );
+}
+
+function L2HubManagementModal({ open, l2Hubs, l3Channels, loading, onClose, onSave, onDelete, detectConflicts }) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editingHub, setEditingHub] = useState(null);
+  const names = useMemo(() => l2Hubs.map((h) => h.name), [l2Hubs]);
+
+  const columns = [
+    { title: '通路分組名稱', dataIndex: 'name', ellipsis: true },
+    { title: '銷售通路數', dataIndex: 'l3_channel_count', width: 100, align: 'center' },
+    { title: '允收（國內）', key: 'acceptance_domestic', width: 140, ellipsis: true, render: (_, r) => formatAcceptanceSummary(r.acceptance_domestic) },
+    { title: '允收（國外）', key: 'acceptance_foreign', width: 140, ellipsis: true, render: (_, r) => formatAcceptanceSummary(r.acceptance_foreign) },
+    { title: '操作', key: 'action', width: 120, align: 'center', render: (_, r) => (
+      <Space size="small">
+        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditingHub(r); setDrawerOpen(true); }}>編輯</Button>
+        <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => {
+          Modal.confirm({ title: '確認刪除通路分組', content: `確定要刪除「${r.name}」嗎？其下銷售通路將解除綁定。`, okText: '確認刪除', okType: 'danger', cancelText: '取消',
+            onOk: async () => { const ok = await onDelete(r.id); if (ok && editingHub?.id === r.id) { setDrawerOpen(false); setEditingHub(null); } },
+          });
+        }}>刪除</Button>
+      </Space>
+    )},
+  ];
+
+  return (
+    <>
+      <Modal title="通路分組設定" open={open} onCancel={onClose} footer={null} width={1080} destroyOnClose>
+        <div className="l2-hub-management-modal__toolbar">
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingHub(null); setDrawerOpen(true); }}>新增通路分組</Button>
+        </div>
+        <Table rowKey="id" columns={columns} dataSource={l2Hubs} loading={loading} pagination={false} size="small" scroll={{ y: 400 }} />
+        <p className="l2-hub-management-modal__hint">總倉為實體庫存來源，不可在此編輯。一個銷售通路同一時間僅能歸屬一個通路分組。</p>
+      </Modal>
+      <L2HubFormDrawer open={drawerOpen} editingHub={editingHub} l3Channels={l3Channels} existingNames={names}
+        onClose={() => { setDrawerOpen(false); setEditingHub(null); }}
+        onSubmit={async (v) => { const ok = await onSave(v, editingHub?.id); if (ok) { setDrawerOpen(false); setEditingHub(null); } }}
+        detectConflicts={detectConflicts} />
+    </>
+  );
+}
+
+const MOCK_TABLE = WAREHOUSE_PRODUCT_MOCK;
+
+const menuItems = [
+  { key: 'platform', label: '平台', children: [] },
+  { key: 'common', label: '共用功能', children: [
+    { key: 'common-report', label: '報表' }, { key: 'common-special', label: '特例出貨' },
+    { key: 'common-cost', label: '成本目録' }, { key: 'common-currency', label: '通貨管理' },
+    { key: 'common-finance-ship', label: '帳務出貨' }, { key: 'common-monthly', label: '月結帳單' },
+    { key: 'common-inventory', label: '倉庫總盤點' },
+  ]},
+  { key: 'distribution', label: '配貨管理', children: [
+    { key: 'virtual-warehouse', label: '虛擬倉' }, { key: 'distribution-records', label: '配貨記録' },
+  ]},
+  { key: 'products', label: '品牌', children: [] },
+  { key: 'finance', label: '財務', children: [] },
+];
+
+function VirtualWarehousePage() {
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [pageSize, setPageSize] = useState(20);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bulkAllocationOpen, setBulkAllocationOpen] = useState(false);
+  const [allocationProduct, setAllocationProduct] = useState(null);
+  const { l2Hubs, l3Channels, loading, saveL2Hub, deleteL2Hub, detectConflicts } = useL2HubManagement();
+  const { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change } = useL2L3CascadeFilter(l2Hubs, l3Channels);
+  const tableData = useMemo(() => filterWarehouseTableData(MOCK_TABLE, filter), [filter]);
+  const selectedRows = useMemo(
+    () => tableData.filter((row) => selectedRowKeys.includes(row.key)),
+    [tableData, selectedRowKeys],
+  );
+
+  const columns = [
+    { title: 'SKU', dataIndex: 'sku', width: 140 },
+    { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
+    { title: '效期_批次', dataIndex: 'expiryBatch', width: 150 },
+    { title: '當前可分配數', dataIndex: 'allocatableQty', width: 120, align: 'center' },
+    { title: '實際倉庫數量', dataIndex: 'actualQty', width: 120, align: 'center' },
+    { title: '', key: 'action', width: 64, align: 'center', render: (_, record) => (
+      <a className="action-link" onClick={() => setAllocationProduct(record)}>配貨</a>
+    ) },
+  ];
+
+  return (
+    <div className="virtual-warehouse-page">
+      <div className="page-actions">
+        <Button type="primary" icon={<UploadOutlined />}>匯入配貨單</Button>
+        <Button type="primary" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>通路分組設定</Button>
+        <Button icon={<FilterOutlined />}>篩選</Button>
+      </div>
+      <div className="filter-panel">
+        <div className="filter-grid">
+          <label className="filter-field col-6"><span className="filter-label">SKU</span><Input placeholder="輸入 SKU" /></label>
+          <HierarchyFilterPanel filter={filter} l2Hubs={l2Hubs} l2Options={l2Options} l3Options={l3Options} l3Channels={l3Channels}
+            onViewModeChange={handleViewModeChange} onL2Change={handleL2Change} onL3Change={handleL3Change} />
+          <label className="filter-field col-6"><span className="filter-label">商品名稱</span><Input /></label>
+          <label className="filter-field col-6"><span className="filter-label">效期</span><RangePicker placeholder={['開始日期', '結束日期']} /></label>
+          <label className="filter-field col-6"><span className="filter-label">批次</span><Input /></label>
+          <div className="filter-actions col-12"><Button>清除篩選條件</Button><Button type="primary">搜尋</Button></div>
+        </div>
+      </div>
+      <div className="table-toolbar">
+        <div className="table-toolbar-left">
+          <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={() => setBulkAllocationOpen(true)}>批量配貨</Button>
+          <Button onClick={() => setSelectedRowKeys([])}>清除選擇</Button>
+        </div>
+        <div className="table-toolbar-right">總共 {tableData.length} 筆，每頁顯示<Select value={pageSize} onChange={setPageSize} className="page-size-select" options={[{ value: 20, label: '20' }, { value: 50, label: '50' }, { value: 100, label: '100' }]} />筆</div>
+      </div>
+      <Table rowSelection={{ columnWidth: 48, selectedRowKeys, onChange: setSelectedRowKeys }} columns={columns} dataSource={tableData} pagination={false} size="small" className="warehouse-table" />
+      <BulkAllocationModal open={bulkAllocationOpen} selectedRows={selectedRows} filter={filter} l2Hubs={l2Hubs} l3Channels={l3Channels}
+        onClose={() => setBulkAllocationOpen(false)} onConfirm={() => { message.success('批量配貨已提交'); setSelectedRowKeys([]); }} />
+      <AllocationModal open={allocationProduct != null} product={allocationProduct} filter={filter} l2Hubs={l2Hubs} l3Channels={l3Channels}
+        onClose={() => setAllocationProduct(null)} onConfirm={() => message.success('配貨已提交')} />
+      <L2HubManagementModal open={settingsOpen} l2Hubs={l2Hubs} l3Channels={l3Channels} loading={loading}
+        onClose={() => setSettingsOpen(false)} onSave={saveL2Hub} onDelete={deleteL2Hub} detectConflicts={detectConflicts} />
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <ConfigProvider locale={antd.locale?.zhTW} theme={{ token: { colorPrimary: '#1890ff', borderRadius: 2, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Microsoft JhengHei", sans-serif' } }}>
+      <Layout className="app-layout">
+        <Header className="app-header"><span className="app-header-logo">UrMart</span></Header>
+        <Layout>
+          <Sider width={200} className="app-sider">
+            <Menu mode="inline" defaultOpenKeys={['common', 'distribution']} selectedKeys={['virtual-warehouse']} items={menuItems} />
+          </Sider>
+          <Content className="app-content"><VirtualWarehousePage /></Content>
+        </Layout>
+      </Layout>
+    </ConfigProvider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);

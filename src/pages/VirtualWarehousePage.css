@@ -1,0 +1,141 @@
+.virtual-warehouse-page {
+  width: 100%;
+}
+
+.page-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-panel {
+  border: 1px solid #d9d9d9;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 16px;
+  align-items: center;
+}
+
+.filter-field {
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+
+.filter-label {
+  flex-shrink: 0;
+  margin-right: 8px;
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 14px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
+.filter-field .ant-input,
+.filter-field .ant-select,
+.filter-field .ant-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.col-6 {
+  grid-column: span 6;
+}
+
+.col-12 {
+  grid-column: span 12;
+}
+
+.filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.table-toolbar-left {
+  display: flex;
+  gap: 8px;
+}
+
+.table-toolbar-left .ant-btn[disabled] {
+  color: rgba(0, 0, 0, 0.25);
+  background: #f5f5f5;
+  border-color: #d9d9d9;
+}
+
+.table-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+}
+
+.page-size-select {
+  width: 72px;
+}
+
+.filter-panel .ant-input,
+.filter-panel .ant-select-selector,
+.filter-panel .ant-picker {
+  height: 32px !important;
+}
+
+.filter-panel .ant-select-selection-item {
+  line-height: 30px !important;
+}
+
+.warehouse-table .ant-table {
+  font-size: 14px;
+}
+
+.warehouse-table .ant-table-container {
+  border: none;
+}
+
+.warehouse-table .ant-table-thead > tr > th {
+  background: #fafafa !important;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+  padding: 8px 16px !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.warehouse-table .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+.warehouse-table .ant-table-tbody > tr > td {
+  padding: 8px 16px !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.warehouse-table .ant-table-tbody > tr:hover > td {
+  background: #fafafa;
+}
+
+.warehouse-table .ant-table-cell {
+  border-inline-end: none !important;
+}
+
+.warehouse-table .action-link {
+  color: #1890ff;
+}
+
+.warehouse-table .action-link:hover {
+  color: #40a9ff;
+}

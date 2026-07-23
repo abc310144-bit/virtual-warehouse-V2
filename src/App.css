@@ -1,0 +1,62 @@
+.app-layout {
+  min-height: 100vh;
+}
+
+.app-header {
+  height: 48px !important;
+  line-height: 48px !important;
+  padding: 0 24px !important;
+  background: #001529 !important;
+}
+
+.app-header-logo {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.app-sider {
+  background: #f0f2f5 !important;
+}
+
+.app-sider .ant-layout-sider-children,
+.app-sider .ant-menu,
+.app-sider .ant-menu-sub.ant-menu-inline {
+  background: #f0f2f5 !important;
+}
+
+.app-sider .ant-menu {
+  border-inline-end: none !important;
+}
+
+.app-sider .ant-menu-submenu-title,
+.app-sider .ant-menu-item {
+  margin: 0 !important;
+  width: 100% !important;
+  border-radius: 0 !important;
+  height: 40px !important;
+  line-height: 40px !important;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.app-sider .ant-menu-sub .ant-menu-item {
+  padding-left: 48px !important;
+}
+
+.app-sider .ant-menu-item-selected {
+  background: #e6f4ff !important;
+  color: #1890ff !important;
+}
+
+.app-sider .ant-menu-item-selected::after {
+  border-inline-end: 3px solid #1890ff !important;
+  inset-inline-end: 0 !important;
+  transform: scaleY(1) !important;
+  opacity: 1 !important;
+}
+
+.app-content {
+  padding: 16px 24px 24px;
+  background: #fff;
+  min-height: calc(100vh - 48px);
+}

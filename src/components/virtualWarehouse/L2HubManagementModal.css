@@ -1,0 +1,11 @@
+.l2-hub-management-modal__toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+}
+
+.l2-hub-management-modal__hint {
+  margin: 16px 0 0;
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
