@@ -636,8 +636,8 @@ function AcceptanceRuleFields({ title, prefix }) {
             );
           }
           return (
-            <Form.Item name={[prefix, 'flat_value']} label="允收比例" className="acceptance-rule-fields__item">
-              <Input placeholder="例如：2/3、1/2、N、< 30天" allowClear />
+            <Form.Item name={[prefix, 'flat_value']} className="acceptance-rule-fields__item">
+              <Input placeholder="<30" allowClear />
             </Form.Item>
           );
         }}
