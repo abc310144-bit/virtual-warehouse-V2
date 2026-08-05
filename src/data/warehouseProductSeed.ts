@@ -1,5 +1,5 @@
 /**
- * 虛擬倉商品表格 mock（總倉 10 筆 + 各通路分組各 10 筆）
+ * 虛擬倉商品表格 mock（總倉 10 筆 + 各通路分組 L2 列 + 各 L3 明細列）
  */
 
 import { buildHierarchyFromSeed } from './hierarchySeed';
@@ -11,9 +11,28 @@ export interface WarehouseProductRow {
   expiryBatch: string;
   allocatableQty: number;
   actualQty: number;
+  /** 即期品（demo 假資料） */
+  isNearExpiry?: boolean;
+  /** 通路列：對應總倉目前可配貨數量 */
+  mainAllocatableQty?: number;
   viewScope?: 'channel';
   l2Id?: string;
+  /** 有值＝L3 明細列；無值＝L2 檢視父列 */
   l3Id?: string;
+  l3Name?: string;
+  /** L2 檢視展開用：該商品在各 L3 的明細 */
+  l3Breakdown?: WarehouseProductRow[];
+}
+
+/** demo：先以 SKU 標記即期品 */
+const NEAR_EXPIRY_SKUS = new Set([
+  '3800233070026', // 保加利亞 Rice Up!
+  '8801234567890', // Nature Made 綜合維他命B群
+  '4718889990001', // DHC 綜合維他命
+]);
+
+function isNearExpirySku(sku: string): boolean {
+  return NEAR_EXPIRY_SKUS.has(sku);
 }
 
 const MAIN_WAREHOUSE_PRODUCTS: WarehouseProductRow[] = [
@@ -40,6 +59,7 @@ const MAIN_WAREHOUSE_PRODUCTS: WarehouseProductRow[] = [
     expiryBatch: '2027-01-24_已抽標',
     allocatableQty: 2,
     actualQty: 2,
+    isNearExpiry: true,
   },
   {
     key: 'main-04',
@@ -72,6 +92,7 @@ const MAIN_WAREHOUSE_PRODUCTS: WarehouseProductRow[] = [
     expiryBatch: '2026-12-31',
     allocatableQty: 210,
     actualQty: 210,
+    isNearExpiry: true,
   },
   {
     key: 'main-08',
@@ -88,6 +109,7 @@ const MAIN_WAREHOUSE_PRODUCTS: WarehouseProductRow[] = [
     expiryBatch: '2027-04-05',
     allocatableQty: 0,
     actualQty: 15,
+    isNearExpiry: true,
   },
   {
     key: 'main-10',
@@ -127,6 +149,11 @@ const EXPIRY_BATCHES = [
 
 const PRODUCTS_PER_L2 = 10;
 
+function getMainAllocatableQty(sku: string): number {
+  const main = MAIN_WAREHOUSE_PRODUCTS.find((row) => row.sku === sku);
+  return main?.allocatableQty ?? 0;
+}
+
 function buildChannelProducts(): WarehouseProductRow[] {
   const { l2Hubs, l3Channels } = buildHierarchyFromSeed();
   const rows: WarehouseProductRow[] = [];
@@ -136,21 +163,53 @@ function buildChannelProducts(): WarehouseProductRow[] {
 
     for (let i = 0; i < PRODUCTS_PER_L2; i += 1) {
       const template = PRODUCT_TEMPLATES[i];
-      const l3 = l3List.length > 0 ? l3List[i % l3List.length] : undefined;
       const seed = (l2Index + 1) * 100 + (i + 1) * 7;
       const actualQty = 12 + (seed % 480);
-      const allocatableQty = Math.min(actualQty, Math.floor(actualQty * (0.55 + (i % 5) * 0.08)));
+      const l2AllocatableQty = Math.min(
+        actualQty,
+        Math.floor(actualQty * (0.55 + (i % 5) * 0.08)),
+      );
+      const nearExpiry = isNearExpirySku(template.sku)
+        ? ({ isNearExpiry: true } as const)
+        : {};
 
       rows.push({
         key: `ch-${l2.id}-p${String(i + 1).padStart(2, '0')}`,
         viewScope: 'channel',
         l2Id: l2.id,
-        ...(l3 ? { l3Id: l3.id } : {}),
         sku: template.sku,
         productName: `${template.name}（${l2.name}）`,
         expiryBatch: EXPIRY_BATCHES[i],
-        allocatableQty,
+        allocatableQty: l2AllocatableQty,
         actualQty,
+        mainAllocatableQty: getMainAllocatableQty(template.sku),
+        ...nearExpiry,
+      });
+
+      l3List.forEach((l3, l3Index) => {
+        let allocatableQty = Math.min(
+          actualQty,
+          Math.floor(actualQty * (0.35 + ((i + l3Index) % 5) * 0.1)),
+        );
+        // demo：線上2C × 第一個商品 × B2C-PChome = 120
+        if (l2.name === '線上2C' && l3.name === 'B2C-PChome' && i === 0) {
+          allocatableQty = 120;
+        }
+
+        rows.push({
+          key: `ch-${l2.id}-p${String(i + 1).padStart(2, '0')}-${l3.id}`,
+          viewScope: 'channel',
+          l2Id: l2.id,
+          l3Id: l3.id,
+          l3Name: l3.name,
+          sku: template.sku,
+          productName: template.name,
+          expiryBatch: EXPIRY_BATCHES[i],
+          allocatableQty,
+          actualQty: Math.max(allocatableQty, Math.floor(allocatableQty * 1.1)),
+          mainAllocatableQty: getMainAllocatableQty(template.sku),
+          ...nearExpiry,
+        });
       });
     }
   });
@@ -162,5 +221,4 @@ export function buildWarehouseProductMock(): WarehouseProductRow[] {
   return [...MAIN_WAREHOUSE_PRODUCTS, ...buildChannelProducts()];
 }
 
-/** 總倉 10 筆 + 17 個通路分組 × 10 筆 = 180 筆 */
 export const WAREHOUSE_PRODUCT_MOCK = buildWarehouseProductMock();

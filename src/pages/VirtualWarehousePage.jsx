@@ -1,6 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, DatePicker, Input, Select, Table, message } from 'antd';
-import { FilterOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons';
+import {
+  CaretDownFilled,
+  FilterOutlined,
+  SettingOutlined,
+  UploadOutlined,
+} from '@ant-design/icons';
 import { AllocationModal } from '../components/virtualWarehouse/AllocationModal';
 import { BulkAllocationModal } from '../components/virtualWarehouse/BulkAllocationModal';
 import { HierarchyFilterPanel } from '../components/virtualWarehouse/HierarchyFilterPanel';
@@ -13,12 +18,37 @@ import './VirtualWarehousePage.css';
 
 const { RangePicker } = DatePicker;
 
+/** demo：品牌篩選選項 */
+const BRAND_OPTIONS = [
+  { value: '英國 Crude', label: '英國 Crude' },
+  { value: 'FreezedryReunion凍物團圓', label: 'FreezedryReunion凍物團圓' },
+  { value: 'Roots Foods', label: 'Roots Foods' },
+  { value: 'Agnesi', label: 'Agnesi' },
+  { value: '詠恩生技', label: '詠恩生技' },
+  { value: '澳洲Ozganics', label: '澳洲Ozganics' },
+  { value: '英國Higher Living', label: '英國Higher Living' },
+];
+
+const L3_BREAKDOWN_COLUMNS = [
+  { title: '銷售通路', dataIndex: 'l3Name', width: 160 },
+  { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
+  { title: '效期_批號', dataIndex: 'expiryBatch', width: 150 },
+  {
+    title: '當前可配數',
+    dataIndex: 'allocatableQty',
+    width: 120,
+    align: 'center',
+  },
+];
+
 function VirtualWarehousePage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [expandedRowKeys, setExpandedRowKeys] = useState([]);
   const [pageSize, setPageSize] = useState(20);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bulkAllocationOpen, setBulkAllocationOpen] = useState(false);
   const [allocationProduct, setAllocationProduct] = useState(null);
+  const [brandFilter, setBrandFilter] = useState(undefined);
 
   const {
     l2Hubs,
@@ -36,6 +66,7 @@ function VirtualWarehousePage() {
     handleViewModeChange,
     handleL2Change,
     handleL3Change,
+    resetFilter,
   } = useL2L3CascadeFilter({
     l2Hubs,
     l3Channels,
@@ -46,39 +77,106 @@ function VirtualWarehousePage() {
     [filter],
   );
 
+  const canExpandL3 =
+    filter.viewMode === 'channel' && Boolean(filter.l2Id) && !filter.l3Id;
+
+  useEffect(() => {
+    setExpandedRowKeys([]);
+    setSelectedRowKeys([]);
+  }, [filter.viewMode, filter.l2Id, filter.l3Id]);
+
   const selectedRows = useMemo(
     () => tableData.filter((row) => selectedRowKeys.includes(row.key)),
     [tableData, selectedRowKeys],
   );
 
-  const columns = [
-    { title: 'SKU', dataIndex: 'sku', width: 140 },
-    { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
-    { title: '效期_批次', dataIndex: 'expiryBatch', width: 150 },
-    {
-      title: '當前可分配數',
-      dataIndex: 'allocatableQty',
-      width: 120,
-      align: 'center',
-    },
-    {
-      title: '實際倉庫數量',
-      dataIndex: 'actualQty',
-      width: 120,
-      align: 'center',
-    },
-    {
-      title: '',
-      key: 'action',
-      width: 64,
-      align: 'center',
-      render: (_, record) => (
-        <a className="action-link" onClick={() => setAllocationProduct(record)}>
-          配貨
-        </a>
+  const expandable = useMemo(() => {
+    if (!canExpandL3) return undefined;
+
+    return {
+      expandedRowKeys,
+      onExpand: (expanded, record) => {
+        setExpandedRowKeys(expanded ? [record.key] : []);
+      },
+      expandIconColumnIndex: 1,
+      columnWidth: 36,
+      expandIcon: ({ expanded, onExpand, record }) => (
+        <CaretDownFilled
+          className={`l2-expand-icon${expanded ? ' l2-expand-icon--open' : ''}`}
+          onClick={(event) => onExpand(record, event)}
+        />
       ),
-    },
-  ];
+      expandedRowRender: (record) => {
+        const breakdown = record.l3Breakdown ?? [];
+        if (breakdown.length === 0) {
+          return (
+            <div className="l3-breakdown-empty">第三層虛擬倉並無資料</div>
+          );
+        }
+        return (
+          <Table
+            className="l3-breakdown-table"
+            rowKey="key"
+            columns={L3_BREAKDOWN_COLUMNS}
+            dataSource={breakdown}
+            pagination={false}
+            size="small"
+          />
+        );
+      },
+    };
+  }, [canExpandL3, expandedRowKeys]);
+
+  const columns = useMemo(() => {
+    const qtyColumns = [
+      ...(filter.viewMode === 'channel'
+        ? [
+            {
+              title: '總倉當前可配數',
+              dataIndex: 'mainAllocatableQty',
+              width: 130,
+              align: 'center',
+            },
+          ]
+        : []),
+      {
+        title: '當前可分配數',
+        dataIndex: 'allocatableQty',
+        width: 120,
+        align: 'center',
+      },
+      {
+        title: '實際倉庫數量',
+        dataIndex: 'actualQty',
+        width: 120,
+        align: 'center',
+        sorter: (a, b) => a.actualQty - b.actualQty,
+      },
+    ];
+
+    return [
+      { title: 'SKU', dataIndex: 'sku', width: 140 },
+      { title: '商品名稱', dataIndex: 'productName', width: 200, ellipsis: true },
+      {
+        title: '效期_批號',
+        dataIndex: 'expiryBatch',
+        width: 150,
+        sorter: (a, b) => String(a.expiryBatch).localeCompare(String(b.expiryBatch), 'zh-Hant'),
+      },
+      ...qtyColumns,
+      {
+        title: '',
+        key: 'action',
+        width: 64,
+        align: 'center',
+        render: (_, record) => (
+          <a className="action-link" onClick={() => setAllocationProduct(record)}>
+            配貨
+          </a>
+        ),
+      },
+    ];
+  }, [filter.viewMode]);
 
   return (
     <div className="virtual-warehouse-page">
@@ -116,6 +214,24 @@ function VirtualWarehousePage() {
           </label>
 
           <label className="filter-field col-6">
+            <span className="filter-label">品牌</span>
+            <Select
+              allowClear
+              showSearch
+              placeholder="請選擇品牌"
+              value={brandFilter}
+              options={BRAND_OPTIONS}
+              onChange={setBrandFilter}
+              optionFilterProp="label"
+              filterOption={(input, option) =>
+                String(option?.label ?? '')
+                  .toLowerCase()
+                  .includes(input.trim().toLowerCase())
+              }
+            />
+          </label>
+
+          <label className="filter-field col-6">
             <span className="filter-label">效期</span>
             <RangePicker placeholder={['開始日期', '結束日期']} />
           </label>
@@ -124,7 +240,14 @@ function VirtualWarehousePage() {
             <Input />
           </label>
           <div className="filter-actions col-12">
-            <Button>清除篩選條件</Button>
+            <Button
+              onClick={() => {
+                resetFilter();
+                setBrandFilter(undefined);
+              }}
+            >
+              清除篩選條件
+            </Button>
             <Button type="primary">搜尋</Button>
           </div>
         </div>
@@ -163,6 +286,7 @@ function VirtualWarehousePage() {
           selectedRowKeys,
           onChange: setSelectedRowKeys,
         }}
+        expandable={expandable}
         columns={columns}
         dataSource={tableData}
         pagination={false}

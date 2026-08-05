@@ -11,12 +11,14 @@ export function normalizeAcceptanceSettings(
   if (!form) return undefined;
 
   if (form.use_tier_ratio) {
+    const tier_0_30 = form.tier_0_30?.trim() || undefined;
     const tier_31_90 = form.tier_31_90?.trim() || undefined;
     const tier_91_365 = form.tier_91_365?.trim() || undefined;
     const tier_366_plus = form.tier_366_plus?.trim() || undefined;
-    if (!tier_31_90 && !tier_91_365 && !tier_366_plus) return undefined;
+    if (!tier_0_30 && !tier_31_90 && !tier_91_365 && !tier_366_plus) return undefined;
     return {
       use_tier_ratio: true,
+      tier_0_30,
       tier_31_90,
       tier_91_365,
       tier_366_plus,
@@ -48,6 +50,7 @@ export function formatAcceptanceSummary(settings?: AcceptanceRuleSettings): stri
   if (!settings) return '-';
   if (settings.use_tier_ratio) {
     const parts = [
+      settings.tier_0_30,
       settings.tier_31_90,
       settings.tier_91_365,
       settings.tier_366_plus,
@@ -67,6 +70,7 @@ export function toFormAcceptance(
     return {
       use_tier_ratio: true,
       flat_value: '',
+      tier_0_30: settings.tier_0_30 ?? '',
       tier_31_90: settings.tier_31_90 ?? '',
       tier_91_365: settings.tier_91_365 ?? '',
       tier_366_plus: settings.tier_366_plus ?? '',
@@ -76,6 +80,7 @@ export function toFormAcceptance(
   return {
     use_tier_ratio: false,
     flat_value: settings.flat_value ?? '',
+    tier_0_30: '',
     tier_31_90: '',
     tier_91_365: '',
     tier_366_plus: '',

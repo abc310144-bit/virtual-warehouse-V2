@@ -52,7 +52,7 @@ export function L2HubManagementModal({
   const handleDelete = (record: L2HubListItem) => {
     Modal.confirm({
       title: '確認刪除通路分組',
-      content: `確定要刪除「${record.name}」嗎？其下銷售通路將解除綁定。`,
+      content: `確定要刪除「${record.name}」嗎？所屬銷售通路將解除綁定。並且釋放所有商品至總倉`,
       okText: '確認刪除',
       okType: 'danger',
       cancelText: '取消',

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, InputNumber, Modal, Select, Space, Table, Tooltip } from 'antd';
+import { Button, Input, InputNumber, Modal, Select, Space, Table, Tooltip } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
@@ -63,6 +63,7 @@ export function BulkAllocationModal({
   const [targetL2Id, setTargetL2Id] = useState<string | null>(null);
   const [targetL3Id, setTargetL3Id] = useState<string | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number | null>>({});
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
 
   const sourceChannelLabel = useMemo(
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
@@ -93,6 +94,7 @@ export function BulkAllocationModal({
     setTargetL2Id(null);
     setTargetL3Id(null);
     setQuantities({});
+    setRemarks({});
   }, [open]);
 
   useEffect(() => {
@@ -116,6 +118,10 @@ export function BulkAllocationModal({
 
   const handleQtyChange = (rowKey: string, value: number | null) => {
     setQuantities((prev) => ({ ...prev, [rowKey]: value }));
+  };
+
+  const handleRemarkChange = (rowKey: string, value: string) => {
+    setRemarks((prev) => ({ ...prev, [rowKey]: value }));
   };
 
   const hasValidTarget = Boolean(targetL2Id);
@@ -196,6 +202,18 @@ export function BulkAllocationModal({
       align: 'center',
       render: (_, row) => quantities[row.key] ?? 0,
     },
+    {
+      title: '備註',
+      width: 140,
+      render: (_, row) => (
+        <Input
+          value={remarks[row.key] ?? ''}
+          allowClear
+          placeholder="選填"
+          onChange={(e) => handleRemarkChange(row.key, e.target.value)}
+        />
+      ),
+    },
   ];
 
   return (
@@ -203,7 +221,7 @@ export function BulkAllocationModal({
       title="批量配貨"
       open={open}
       onCancel={onClose}
-      width={1100}
+      width={1200}
       destroyOnClose
       footer={
         <Space>
@@ -251,7 +269,7 @@ export function BulkAllocationModal({
         dataSource={selectedRows}
         pagination={false}
         size="small"
-        scroll={{ x: 980 }}
+        scroll={{ x: 1120 }}
       />
     </Modal>
   );

@@ -47,6 +47,42 @@
   margin-bottom: 0;
 }
 
+.acceptance-ratio-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acceptance-ratio-input__box {
+  width: 56px !important;
+}
+
+.acceptance-ratio-input__box .ant-input-number-input {
+  text-align: center;
+  padding-inline: 4px;
+}
+
+.acceptance-ratio-input__slash {
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+}
+
+.acceptance-flat-days-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acceptance-flat-days-input__prefix,
+.acceptance-flat-days-input__suffix {
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+
 .l2-hub-form-drawer__section-title {
   margin: 8px 0 12px;
   font-size: 14px;

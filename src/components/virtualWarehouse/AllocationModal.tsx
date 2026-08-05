@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, InputNumber, Modal, Select, Space, Table, Tooltip } from 'antd';
+import { Button, Input, InputNumber, Modal, Select, Space, Table, Tooltip } from 'antd';
 import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
@@ -28,6 +28,7 @@ interface AllocationLine {
   l2Id: string | null;
   l3Id: string | null;
   qty: number | null;
+  remark: string;
 }
 
 function HeaderWithTip({ title, tip }: { title: string; tip: string }) {
@@ -47,6 +48,7 @@ function createEmptyLine(): AllocationLine {
     l2Id: null,
     l3Id: null,
     qty: null,
+    remark: '',
   };
 }
 
@@ -202,6 +204,18 @@ export function AllocationModal({
       render: (_, line) => line.qty ?? 0,
     },
     {
+      title: '備註',
+      width: 140,
+      render: (_, line) => (
+        <Input
+          value={line.remark}
+          allowClear
+          placeholder="選填"
+          onChange={(e) => updateLine(line.id, { remark: e.target.value })}
+        />
+      ),
+    },
+    {
       title: '',
       width: 48,
       align: 'center',
@@ -222,7 +236,7 @@ export function AllocationModal({
       title="配貨"
       open={open}
       onCancel={onClose}
-      width={860}
+      width={980}
       destroyOnClose
       footer={
         <Space>

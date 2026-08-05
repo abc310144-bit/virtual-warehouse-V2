@@ -12,10 +12,11 @@ export type EntityStatus = 'active' | 'inactive';
 
 /** 效期允收規範設定 */
 export interface AcceptanceRuleSettings {
-  /** 是否啟用總效期分級比例（31-90 / 91-365 / 366+） */
+  /** 是否啟用總效期分級比例（0-30 / 31-90 / 91-365 / 366+） */
   use_tier_ratio: boolean;
   /** 未啟用分級時的單一允收值，如 2/3、N、< 30天 */
   flat_value?: string;
+  tier_0_30?: string;
   tier_31_90?: string;
   tier_91_365?: string;
   tier_366_plus?: string;
@@ -25,6 +26,7 @@ export interface AcceptanceRuleSettings {
 export interface AcceptanceRuleFormValues {
   use_tier_ratio: boolean;
   flat_value: string;
+  tier_0_30: string;
   tier_31_90: string;
   tier_91_365: string;
   tier_366_plus: string;
@@ -123,6 +125,7 @@ export interface SaveL2HubFormValues {
 export const EMPTY_ACCEPTANCE_FORM: AcceptanceRuleFormValues = {
   use_tier_ratio: false,
   flat_value: '',
+  tier_0_30: '',
   tier_31_90: '',
   tier_91_365: '',
   tier_366_plus: '',

@@ -5,7 +5,7 @@ const {
 } = antd;
 const {
   UploadOutlined, FilterOutlined, SettingOutlined,
-  PlusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined,
+  PlusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined, CaretDownFilled,
 } = icons;
 const { Header, Sider, Content } = Layout;
 const { RangePicker } = DatePicker;
@@ -17,6 +17,7 @@ const DEFAULT_FILTER = { viewMode: 'main', l2Id: null, l3Id: null };
 const EMPTY_ACCEPTANCE_FORM = {
   use_tier_ratio: false,
   flat_value: '',
+  tier_0_30: '',
   tier_31_90: '',
   tier_91_365: '',
   tier_366_plus: '',
@@ -25,11 +26,12 @@ const EMPTY_ACCEPTANCE_FORM = {
 function normalizeAcceptanceSettings(form) {
   if (!form) return undefined;
   if (form.use_tier_ratio) {
+    const tier_0_30 = form.tier_0_30?.trim() || undefined;
     const tier_31_90 = form.tier_31_90?.trim() || undefined;
     const tier_91_365 = form.tier_91_365?.trim() || undefined;
     const tier_366_plus = form.tier_366_plus?.trim() || undefined;
-    if (!tier_31_90 && !tier_91_365 && !tier_366_plus) return undefined;
-    return { use_tier_ratio: true, tier_31_90, tier_91_365, tier_366_plus };
+    if (!tier_0_30 && !tier_31_90 && !tier_91_365 && !tier_366_plus) return undefined;
+    return { use_tier_ratio: true, tier_0_30, tier_31_90, tier_91_365, tier_366_plus };
   }
   const flat_value = form.flat_value?.trim() || undefined;
   if (!flat_value) return undefined;
@@ -38,7 +40,7 @@ function normalizeAcceptanceSettings(form) {
 function formatAcceptanceSummary(settings) {
   if (!settings) return '-';
   if (settings.use_tier_ratio) {
-    const parts = [settings.tier_31_90, settings.tier_91_365, settings.tier_366_plus].filter(Boolean);
+    const parts = [settings.tier_0_30, settings.tier_31_90, settings.tier_91_365, settings.tier_366_plus].filter(Boolean);
     return parts.length > 0 ? parts.join('｜') : '-';
   }
   return settings.flat_value || '-';
@@ -80,6 +82,7 @@ function toFormAcceptance(settings) {
     return {
       use_tier_ratio: true,
       flat_value: '',
+      tier_0_30: settings.tier_0_30 ?? '',
       tier_31_90: settings.tier_31_90 ?? '',
       tier_91_365: settings.tier_91_365 ?? '',
       tier_366_plus: settings.tier_366_plus ?? '',
@@ -88,6 +91,7 @@ function toFormAcceptance(settings) {
   return {
     use_tier_ratio: false,
     flat_value: settings.flat_value ?? '',
+    tier_0_30: '',
     tier_31_90: '',
     tier_91_365: '',
     tier_366_plus: '',
@@ -207,9 +211,18 @@ function buildL3ChannelOptions(channels) {
 function filterWarehouseTableData(data, filter) {
   if (filter.viewMode === 'main') return data.filter((row) => row.viewScope !== 'channel');
   if (!filter.l2Id) return [];
-  let rows = data.filter((row) => row.l2Id === filter.l2Id);
-  if (filter.l3Id) rows = rows.filter((row) => row.l3Id === filter.l3Id);
-  return rows;
+
+  const inL2 = data.filter((row) => row.viewScope === 'channel' && row.l2Id === filter.l2Id);
+  if (filter.l3Id) return inL2.filter((row) => row.l3Id === filter.l3Id);
+
+  const parents = inL2.filter((row) => !row.l3Id);
+  const details = inL2.filter((row) => row.l3Id);
+  return parents.map((parent) => ({
+    ...parent,
+    l3Breakdown: details.filter(
+      (row) => row.sku === parent.sku && row.expiryBatch === parent.expiryBatch,
+    ),
+  }));
 }
 
 function getSourceChannelLabel(filter, l2Hubs, l3Channels) {
@@ -244,6 +257,7 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
   const [targetL2Id, setTargetL2Id] = useState(null);
   const [targetL3Id, setTargetL3Id] = useState(null);
   const [quantities, setQuantities] = useState({});
+  const [remarks, setRemarks] = useState({});
 
   const sourceChannelLabel = useMemo(
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
@@ -269,6 +283,7 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
     setTargetL2Id(null);
     setTargetL3Id(null);
     setQuantities({});
+    setRemarks({});
   }, [open]);
 
   useEffect(() => {
@@ -330,10 +345,17 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
       title: <BulkAllocationHeaderTip title="配貨後可分配數" tip="配貨完成後，該商品於目標位置的可分配數量" />,
       width: 130, align: 'center', render: (_, row) => quantities[row.key] ?? 0,
     },
+    {
+      title: '備註', width: 140,
+      render: (_, row) => (
+        <Input value={remarks[row.key] ?? ''} allowClear placeholder="選填"
+          onChange={(e) => setRemarks((prev) => ({ ...prev, [row.key]: e.target.value }))} />
+      ),
+    },
   ];
 
   return (
-    <Modal title="批量配貨" open={open} onCancel={onClose} width={1100} destroyOnClose
+    <Modal title="批量配貨" open={open} onCancel={onClose} width={1200} destroyOnClose
       footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" disabled={!canConfirm} onClick={() => { onConfirm?.(); onClose(); }}>確認</Button></Space>}>
       <div className="bulk-allocation-modal__location">
         <span className="bulk-allocation-modal__location-label">配貨位置</span>
@@ -353,7 +375,7 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
         </div>
       </div>
       <div className="bulk-allocation-modal__section-title">當前選擇資料</div>
-      <Table rowKey="key" columns={columns} dataSource={selectedRows} pagination={false} size="small" scroll={{ x: 980 }} />
+      <Table rowKey="key" columns={columns} dataSource={selectedRows} pagination={false} size="small" scroll={{ x: 1120 }} />
     </Modal>
   );
 }
@@ -364,6 +386,7 @@ function createAllocationLine() {
     l2Id: null,
     l3Id: null,
     qty: null,
+    remark: '',
   };
 }
 
@@ -442,6 +465,13 @@ function AllocationModal({ open, product, filter, l2Hubs, l3Channels, onClose, o
       width: 130, align: 'center', render: (_, line) => line.qty ?? 0,
     },
     {
+      title: '備註', width: 140,
+      render: (_, line) => (
+        <Input value={line.remark} allowClear placeholder="選填"
+          onChange={(e) => updateLine(line.id, { remark: e.target.value })} />
+      ),
+    },
+    {
       title: '', width: 48, align: 'center',
       render: (_, line, index) => index === lines.length - 1 ? (
         <Button type="text" icon={<PlusOutlined />} className="allocation-modal__add-row"
@@ -451,7 +481,7 @@ function AllocationModal({ open, product, filter, l2Hubs, l3Channels, onClose, o
   ];
 
   return (
-    <Modal title="配貨" open={open} onCancel={onClose} width={860} destroyOnClose
+    <Modal title="配貨" open={open} onCancel={onClose} width={980} destroyOnClose
       footer={<Space><Button onClick={onClose}>取消</Button>
         <Button type="primary" disabled={!canConfirm} onClick={() => { onConfirm?.(); onClose(); }}>確認</Button></Space>}>
       {product && (
@@ -523,7 +553,11 @@ function useL2L3CascadeFilter(l2Hubs, l3Channels) {
     setFilter((prev) => ({ ...prev, viewMode: 'channel', l3Id }));
   }, []);
 
-  return { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change };
+  const resetFilter = useCallback(() => {
+    setFilter({ ...DEFAULT_FILTER });
+  }, []);
+
+  return { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change, resetFilter };
 }
 
 function useL2HubManagement() {
@@ -603,8 +637,91 @@ function HierarchyFilterPanel({ filter, l2Hubs, l2Options, l3Options, l3Channels
   );
 }
 
+function parseRatio(value) {
+  if (!value) return { numerator: null, denominator: null };
+  const match = String(value).trim().match(/^(\d+)\s*\/\s*(\d+)$/);
+  if (!match) return { numerator: null, denominator: null };
+  return { numerator: Number(match[1]), denominator: Number(match[2]) };
+}
+
+function formatRatio(numerator, denominator) {
+  if (numerator == null || denominator == null) return '';
+  return `${numerator}/${denominator}`;
+}
+
+function parseFlatDays(value) {
+  if (!value) return null;
+  const match = String(value).trim().match(/^<\s*(\d+)\s*天?$/);
+  if (!match) return null;
+  return Number(match[1]);
+}
+
+function formatFlatDays(days) {
+  if (days == null) return '';
+  return `<${days}天`;
+}
+
+function RatioInput({ value, onChange }) {
+  const parsed = parseRatio(value);
+  const [numerator, setNumerator] = useState(parsed.numerator);
+  const [denominator, setDenominator] = useState(parsed.denominator);
+
+  useEffect(() => {
+    const next = parseRatio(value);
+    setNumerator(next.numerator);
+    setDenominator(next.denominator);
+  }, [value]);
+
+  const emit = (nextNumerator, nextDenominator) => {
+    onChange?.(formatRatio(nextNumerator, nextDenominator));
+  };
+
+  return (
+    <div className="acceptance-ratio-input">
+      <InputNumber className="acceptance-ratio-input__box" min={1} precision={0} controls={false}
+        value={numerator}
+        onChange={(next) => {
+          const num = typeof next === 'number' ? next : null;
+          setNumerator(num);
+          emit(num, denominator);
+        }} />
+      <span className="acceptance-ratio-input__slash" aria-hidden>/</span>
+      <InputNumber className="acceptance-ratio-input__box" min={1} precision={0} controls={false}
+        value={denominator}
+        onChange={(next) => {
+          const den = typeof next === 'number' ? next : null;
+          setDenominator(den);
+          emit(numerator, den);
+        }} />
+    </div>
+  );
+}
+
+function FlatDaysInput({ value, onChange }) {
+  const [days, setDays] = useState(() => parseFlatDays(value));
+
+  useEffect(() => {
+    setDays(parseFlatDays(value));
+  }, [value]);
+
+  return (
+    <div className="acceptance-flat-days-input">
+      <span className="acceptance-flat-days-input__prefix" aria-hidden>&lt;</span>
+      <InputNumber className="acceptance-ratio-input__box" min={1} precision={0} controls={false}
+        value={days}
+        onChange={(next) => {
+          const num = typeof next === 'number' ? next : null;
+          setDays(num);
+          onChange?.(formatFlatDays(num));
+        }} />
+      <span className="acceptance-flat-days-input__suffix">天</span>
+    </div>
+  );
+}
+
 function AcceptanceRuleFields({ title, prefix }) {
   const tiers = [
+    { name: 'tier_0_30', label: '0-30天' },
     { name: 'tier_31_90', label: '31-90天' },
     { name: 'tier_91_365', label: '91-365天' },
     { name: 'tier_366_plus', label: '366天以上' },
@@ -629,7 +746,7 @@ function AcceptanceRuleFields({ title, prefix }) {
               <div className="acceptance-rule-fields__tier-group">
                 {tiers.map(({ name, label }) => (
                   <Form.Item key={name} name={[prefix, name]} label={label} className="acceptance-rule-fields__item">
-                    <Input placeholder="例如：2/3、2/5、1/3" allowClear />
+                    <RatioInput />
                   </Form.Item>
                 ))}
               </div>
@@ -637,7 +754,7 @@ function AcceptanceRuleFields({ title, prefix }) {
           }
           return (
             <Form.Item name={[prefix, 'flat_value']} className="acceptance-rule-fields__item">
-              <Input placeholder="<30" allowClear />
+              <FlatDaysInput />
             </Form.Item>
           );
         }}
@@ -650,6 +767,10 @@ function isChannelTakenByOtherHub(channel, editingHubId) {
   return channel.l2_hub_id != null && channel.l2_hub_id !== editingHubId;
 }
 
+function findPartnerTypeKeyByChannelName(channelName) {
+  return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
+}
+
 function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) {
   const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
 
@@ -658,11 +779,26 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) 
     [l3Channels, editingHubId],
   );
 
+  const idToChannel = useMemo(() => {
+    const map = new Map();
+    availableChannels.forEach((channel) => map.set(channel.id, channel));
+    return map;
+  }, [availableChannels]);
+
   const nameToChannel = useMemo(() => {
     const map = new Map();
     availableChannels.forEach((channel) => map.set(channel.name, channel));
     return map;
   }, [availableChannels]);
+
+  const selectedIdsKey = value.join(',');
+  useEffect(() => {
+    if (!editingHubId || value.length === 0) return;
+    const first = idToChannel.get(value[0]);
+    if (!first) return;
+    const typeKey = findPartnerTypeKeyByChannelName(first.name);
+    if (typeKey) setPartnerTypeKey(typeKey);
+  }, [editingHubId, selectedIdsKey, idToChannel, value]);
 
   const currentType = getPartnerTypeByKey(partnerTypeKey);
   const currentTypeChannelIds = useMemo(() => {
@@ -671,18 +807,29 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) 
   }, [currentType, nameToChannel]);
 
   const nameOptions = useMemo(() => {
-    if (!currentType) return [];
-    return currentType.channels
-      .map((name) => nameToChannel.get(name))
-      .filter(Boolean)
-      .map((channel) => ({
-        value: channel.id,
-        label: isChannelTakenByOtherHub(channel, editingHubId)
-          ? `${channel.name}（已歸屬其他通路分組）`
-          : channel.name,
-        disabled: isChannelTakenByOtherHub(channel, editingHubId),
-      }));
-  }, [currentType, nameToChannel, editingHubId]);
+    const optionMap = new Map();
+    if (currentType) {
+      currentType.channels
+        .map((name) => nameToChannel.get(name))
+        .filter(Boolean)
+        .forEach((channel) => {
+          optionMap.set(channel.id, {
+            value: channel.id,
+            label: isChannelTakenByOtherHub(channel, editingHubId)
+              ? `${channel.name}（已歸屬其他通路分組）`
+              : channel.name,
+            disabled: isChannelTakenByOtherHub(channel, editingHubId),
+          });
+        });
+    }
+    value.forEach((id) => {
+      if (optionMap.has(id)) return;
+      const channel = idToChannel.get(id);
+      if (!channel) return;
+      optionMap.set(channel.id, { value: channel.id, label: channel.name });
+    });
+    return [...optionMap.values()];
+  }, [currentType, nameToChannel, editingHubId, value, idToChannel]);
 
   const currentTypeSelectedCount = currentTypeChannelIds.filter((id) => value.includes(id)).length;
 
@@ -696,13 +843,6 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) 
       .map((channel) => channel.id);
     onChange?.([...new Set([...value, ...idsToAdd])]);
   };
-
-  const handleNameChange = (nextIds) => {
-    const otherTypeIds = value.filter((id) => !currentTypeChannelIds.includes(id));
-    onChange?.([...otherTypeIds, ...nextIds]);
-  };
-
-  const selectedInCurrentType = value.filter((id) => currentTypeChannelIds.includes(id));
 
   return (
     <div className="sales-channel-picker">
@@ -730,7 +870,7 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) 
         </div>
         <Select mode="multiple" allowClear className="sales-channel-picker__name-select"
           placeholder={currentType && currentType.channels.length === 0 ? '此類型尚無通路' : '選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'}
-          value={selectedInCurrentType} options={nameOptions} onChange={handleNameChange} optionFilterProp="label"
+          value={value} options={nameOptions} onChange={(nextIds) => onChange?.(nextIds)} optionFilterProp="label"
           disabled={!currentType || currentType.channels.length === 0} />
       </div>
       <div className="sales-channel-picker__summary">
@@ -828,7 +968,7 @@ function L2HubManagementModal({ open, l2Hubs, l3Channels, loading, onClose, onSa
       <Space size="small">
         <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditingHub(r); setDrawerOpen(true); }}>編輯</Button>
         <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => {
-          Modal.confirm({ title: '確認刪除通路分組', content: `確定要刪除「${r.name}」嗎？其下銷售通路將解除綁定。`, okText: '確認刪除', okType: 'danger', cancelText: '取消',
+          Modal.confirm({ title: '確認刪除通路分組', content: `確定要刪除「${r.name}」嗎？所屬銷售通路將解除綁定。並且釋放所有商品至總倉`, okText: '確認刪除', okType: 'danger', cancelText: '取消',
             onOk: async () => { const ok = await onDelete(r.id); if (ok && editingHub?.id === r.id) { setDrawerOpen(false); setEditingHub(null); } },
           });
         }}>刪除</Button>
@@ -870,30 +1010,103 @@ const menuItems = [
   { key: 'finance', label: '財務', children: [] },
 ];
 
+const L3_BREAKDOWN_COLUMNS = [
+  { title: '銷售通路', dataIndex: 'l3Name', width: 160 },
+  { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
+  { title: '效期_批號', dataIndex: 'expiryBatch', width: 150 },
+  { title: '當前可配數', dataIndex: 'allocatableQty', width: 120, align: 'center' },
+];
+
+const BRAND_OPTIONS = [
+  { value: '英國 Crude', label: '英國 Crude' },
+  { value: 'FreezedryReunion凍物團圓', label: 'FreezedryReunion凍物團圓' },
+  { value: 'Roots Foods', label: 'Roots Foods' },
+  { value: 'Agnesi', label: 'Agnesi' },
+  { value: '詠恩生技', label: '詠恩生技' },
+  { value: '澳洲Ozganics', label: '澳洲Ozganics' },
+  { value: '英國Higher Living', label: '英國Higher Living' },
+];
+
 function VirtualWarehousePage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [expandedRowKeys, setExpandedRowKeys] = useState([]);
   const [pageSize, setPageSize] = useState(20);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bulkAllocationOpen, setBulkAllocationOpen] = useState(false);
   const [allocationProduct, setAllocationProduct] = useState(null);
+  const [brandFilter, setBrandFilter] = useState(undefined);
   const { l2Hubs, l3Channels, loading, saveL2Hub, deleteL2Hub, detectConflicts } = useL2HubManagement();
-  const { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change } = useL2L3CascadeFilter(l2Hubs, l3Channels);
+  const { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change, resetFilter } = useL2L3CascadeFilter(l2Hubs, l3Channels);
   const tableData = useMemo(() => filterWarehouseTableData(MOCK_TABLE, filter), [filter]);
+  const canExpandL3 = filter.viewMode === 'channel' && Boolean(filter.l2Id) && !filter.l3Id;
+
+  useEffect(() => {
+    setExpandedRowKeys([]);
+    setSelectedRowKeys([]);
+  }, [filter.viewMode, filter.l2Id, filter.l3Id]);
+
   const selectedRows = useMemo(
     () => tableData.filter((row) => selectedRowKeys.includes(row.key)),
     [tableData, selectedRowKeys],
   );
 
-  const columns = [
-    { title: 'SKU', dataIndex: 'sku', width: 140 },
-    { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
-    { title: '效期_批次', dataIndex: 'expiryBatch', width: 150 },
-    { title: '當前可分配數', dataIndex: 'allocatableQty', width: 120, align: 'center' },
-    { title: '實際倉庫數量', dataIndex: 'actualQty', width: 120, align: 'center' },
-    { title: '', key: 'action', width: 64, align: 'center', render: (_, record) => (
-      <a className="action-link" onClick={() => setAllocationProduct(record)}>配貨</a>
-    ) },
-  ];
+  const expandable = useMemo(() => {
+    if (!canExpandL3) return undefined;
+    return {
+      expandedRowKeys,
+      onExpand: (expanded, record) => {
+        setExpandedRowKeys(expanded ? [record.key] : []);
+      },
+      expandIconColumnIndex: 1,
+      columnWidth: 36,
+      expandIcon: ({ expanded, onExpand, record }) => (
+        <CaretDownFilled
+          className={`l2-expand-icon${expanded ? ' l2-expand-icon--open' : ''}`}
+          onClick={(event) => onExpand(record, event)}
+        />
+      ),
+      expandedRowRender: (record) => {
+        const breakdown = record.l3Breakdown ?? [];
+        if (breakdown.length === 0) {
+          return <div className="l3-breakdown-empty">第三層虛擬倉並無資料</div>;
+        }
+        return (
+          <Table className="l3-breakdown-table" rowKey="key" columns={L3_BREAKDOWN_COLUMNS}
+            dataSource={breakdown} pagination={false} size="small" />
+        );
+      },
+    };
+  }, [canExpandL3, expandedRowKeys]);
+
+  const columns = useMemo(() => {
+    const qtyColumns = [
+      ...(filter.viewMode === 'channel'
+        ? [{ title: '總倉當前可配數', dataIndex: 'mainAllocatableQty', width: 130, align: 'center' }]
+        : []),
+      { title: '當前可分配數', dataIndex: 'allocatableQty', width: 120, align: 'center' },
+      {
+        title: '實際倉庫數量',
+        dataIndex: 'actualQty',
+        width: 120,
+        align: 'center',
+        sorter: (a, b) => a.actualQty - b.actualQty,
+      },
+    ];
+    return [
+      { title: 'SKU', dataIndex: 'sku', width: 140 },
+      { title: '商品名稱', dataIndex: 'productName', width: 200, ellipsis: true },
+      {
+        title: '效期_批號',
+        dataIndex: 'expiryBatch',
+        width: 150,
+        sorter: (a, b) => String(a.expiryBatch).localeCompare(String(b.expiryBatch), 'zh-Hant'),
+      },
+      ...qtyColumns,
+      { title: '', key: 'action', width: 64, align: 'center', render: (_, record) => (
+        <a className="action-link" onClick={() => setAllocationProduct(record)}>配貨</a>
+      ) },
+    ];
+  }, [filter.viewMode]);
 
   return (
     <div className="virtual-warehouse-page">
@@ -908,9 +1121,18 @@ function VirtualWarehousePage() {
           <HierarchyFilterPanel filter={filter} l2Hubs={l2Hubs} l2Options={l2Options} l3Options={l3Options} l3Channels={l3Channels}
             onViewModeChange={handleViewModeChange} onL2Change={handleL2Change} onL3Change={handleL3Change} />
           <label className="filter-field col-6"><span className="filter-label">商品名稱</span><Input /></label>
+          <label className="filter-field col-6">
+            <span className="filter-label">品牌</span>
+            <Select allowClear showSearch placeholder="請選擇品牌" value={brandFilter} options={BRAND_OPTIONS}
+              onChange={setBrandFilter} optionFilterProp="label"
+              filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.trim().toLowerCase())} />
+          </label>
           <label className="filter-field col-6"><span className="filter-label">效期</span><RangePicker placeholder={['開始日期', '結束日期']} /></label>
           <label className="filter-field col-6"><span className="filter-label">批次</span><Input /></label>
-          <div className="filter-actions col-12"><Button>清除篩選條件</Button><Button type="primary">搜尋</Button></div>
+          <div className="filter-actions col-12">
+            <Button onClick={() => { resetFilter(); setBrandFilter(undefined); }}>清除篩選條件</Button>
+            <Button type="primary">搜尋</Button>
+          </div>
         </div>
       </div>
       <div className="table-toolbar">
@@ -920,7 +1142,8 @@ function VirtualWarehousePage() {
         </div>
         <div className="table-toolbar-right">總共 {tableData.length} 筆，每頁顯示<Select value={pageSize} onChange={setPageSize} className="page-size-select" options={[{ value: 20, label: '20' }, { value: 50, label: '50' }, { value: 100, label: '100' }]} />筆</div>
       </div>
-      <Table rowSelection={{ columnWidth: 48, selectedRowKeys, onChange: setSelectedRowKeys }} columns={columns} dataSource={tableData} pagination={false} size="small" className="warehouse-table" />
+      <Table rowSelection={{ columnWidth: 48, selectedRowKeys, onChange: setSelectedRowKeys }}
+        expandable={expandable} columns={columns} dataSource={tableData} pagination={false} size="small" className="warehouse-table" />
       <BulkAllocationModal open={bulkAllocationOpen} selectedRows={selectedRows} filter={filter} l2Hubs={l2Hubs} l3Channels={l3Channels}
         onClose={() => setBulkAllocationOpen(false)} onConfirm={() => { message.success('批量配貨已提交'); setSelectedRowKeys([]); }} />
       <AllocationModal open={allocationProduct != null} product={allocationProduct} filter={filter} l2Hubs={l2Hubs} l3Channels={l3Channels}

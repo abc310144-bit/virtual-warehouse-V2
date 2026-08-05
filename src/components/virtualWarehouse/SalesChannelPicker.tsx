@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Select, Tooltip } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
 import {
@@ -36,6 +36,10 @@ function isChannelSelectable(
   return !isChannelTakenByOtherHub(channel, editingHubId);
 }
 
+function findPartnerTypeKeyByChannelName(channelName: string): string | undefined {
+  return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
+}
+
 /** 兩層銷售通路選擇：合作通路類型 → 通路名稱 */
 export function SalesChannelPicker({
   value = [],
@@ -53,11 +57,27 @@ export function SalesChannelPicker({
     [l3Channels, editingHubId],
   );
 
+  const idToChannel = useMemo(() => {
+    const map = new Map<string, L3Channel>();
+    availableChannels.forEach((channel) => map.set(channel.id, channel));
+    return map;
+  }, [availableChannels]);
+
   const nameToChannel = useMemo(() => {
     const map = new Map<string, L3Channel>();
     availableChannels.forEach((channel) => map.set(channel.name, channel));
     return map;
   }, [availableChannels]);
+
+  // 編輯帶入已選通路時，自動切到第一個有選取項目的合作通路類型
+  const selectedIdsKey = value.join(',');
+  useEffect(() => {
+    if (!editingHubId || value.length === 0) return;
+    const first = idToChannel.get(value[0]);
+    if (!first) return;
+    const typeKey = findPartnerTypeKeyByChannelName(first.name);
+    if (typeKey) setPartnerTypeKey(typeKey);
+  }, [editingHubId, selectedIdsKey, idToChannel, value]);
 
   const partnerTypeOptions = useMemo(
     () =>
@@ -77,16 +97,34 @@ export function SalesChannelPicker({
   }, [currentType, nameToChannel]);
 
   const nameOptions = useMemo(() => {
-    if (!currentType) return [];
-    return currentType.channels
-      .map((name) => nameToChannel.get(name))
-      .filter((channel): channel is L3Channel => Boolean(channel))
-      .map((channel) => ({
+    const optionMap = new Map<string, { value: string; label: string; disabled?: boolean }>();
+
+    if (currentType) {
+      currentType.channels
+        .map((name) => nameToChannel.get(name))
+        .filter((channel): channel is L3Channel => Boolean(channel))
+        .forEach((channel) => {
+          optionMap.set(channel.id, {
+            value: channel.id,
+            label: buildOptionLabel(channel, editingHubId),
+            disabled: isChannelTakenByOtherHub(channel, editingHubId),
+          });
+        });
+    }
+
+    // 其他類型已選通路也要進 options，通路名稱才能正確顯示全部已選
+    value.forEach((id) => {
+      if (optionMap.has(id)) return;
+      const channel = idToChannel.get(id);
+      if (!channel) return;
+      optionMap.set(channel.id, {
         value: channel.id,
-        label: buildOptionLabel(channel, editingHubId),
-        disabled: isChannelTakenByOtherHub(channel, editingHubId),
-      }));
-  }, [currentType, nameToChannel, editingHubId]);
+        label: channel.name,
+      });
+    });
+
+    return [...optionMap.values()];
+  }, [currentType, nameToChannel, editingHubId, value, idToChannel]);
 
   const currentTypeSelectedCount = currentTypeChannelIds.filter((id) => value.includes(id)).length;
 
@@ -100,13 +138,6 @@ export function SalesChannelPicker({
       .map((channel) => channel.id);
     onChange?.([...new Set([...value, ...idsToAdd])]);
   };
-
-  const handleNameChange = (nextIds: string[]) => {
-    const otherTypeIds = value.filter((id) => !currentTypeChannelIds.includes(id));
-    onChange?.([...otherTypeIds, ...nextIds]);
-  };
-
-  const selectedInCurrentType = value.filter((id) => currentTypeChannelIds.includes(id));
 
   return (
     <div className="sales-channel-picker">
@@ -153,9 +184,9 @@ export function SalesChannelPicker({
               ? '此類型尚無通路'
               : '選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'
           }
-          value={selectedInCurrentType}
+          value={value}
           options={nameOptions}
-          onChange={handleNameChange}
+          onChange={(nextIds) => onChange?.(nextIds)}
           optionFilterProp="label"
           disabled={!currentType || currentType.channels.length === 0}
         />

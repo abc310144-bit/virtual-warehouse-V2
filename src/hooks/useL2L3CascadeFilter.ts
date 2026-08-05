@@ -30,6 +30,8 @@ interface UseL2L3CascadeFilterReturn {
   handleViewModeChange: (viewMode: VirtualWarehouseViewMode) => void;
   handleL2Change: (l2Id: string | undefined) => void;
   handleL3Change: (l3Id: string) => void;
+  /** 還原為預設：總倉 */
+  resetFilter: () => void;
 }
 
 /** 取得 L2 底下已綁定的 L3 通路（含停用，與設定彈窗「銷售通路數」一致） */
@@ -150,6 +152,10 @@ export function useL2L3CascadeFilter({
     setFilter((prev) => ({ ...prev, viewMode: 'channel', l3Id }));
   }, []);
 
+  const resetFilter = useCallback(() => {
+    setFilter({ ...DEFAULT_FILTER_STATE });
+  }, []);
+
   return {
     filter,
     l2Options,
@@ -157,5 +163,6 @@ export function useL2L3CascadeFilter({
     handleViewModeChange,
     handleL2Change,
     handleL3Change,
+    resetFilter,
   };
 }
