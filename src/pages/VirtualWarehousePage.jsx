@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button, DatePicker, Input, Select, Table, message } from 'antd';
 import {
   CaretDownFilled,
+  DownloadOutlined,
   FilterOutlined,
   SettingOutlined,
   UploadOutlined,
@@ -12,6 +13,7 @@ import { HierarchyFilterPanel } from '../components/virtualWarehouse/HierarchyFi
 import { L2HubManagementModal } from '../components/virtualWarehouse/L2HubManagementModal';
 import { useL2L3CascadeFilter } from '../hooks/useL2L3CascadeFilter';
 import { useL2HubManagement } from '../hooks/useL2HubManagement';
+import { exportWarehouseTableCsv } from '../utils/exportWarehouseCsv';
 import { filterWarehouseTableData } from '../utils/filterWarehouseTableData';
 import { WAREHOUSE_PRODUCT_MOCK } from '../data/warehouseProductSeed';
 import './VirtualWarehousePage.css';
@@ -89,6 +91,20 @@ function VirtualWarehousePage() {
     () => tableData.filter((row) => selectedRowKeys.includes(row.key)),
     [tableData, selectedRowKeys],
   );
+
+  const handleExportCsv = () => {
+    if (tableData.length === 0) {
+      message.warning('目前沒有可匯出的資料');
+      return;
+    }
+    exportWarehouseTableCsv({
+      rows: tableData,
+      filter,
+      l2Hubs,
+      l3Channels,
+    });
+    message.success('已匯出 CSV');
+  };
 
   const expandable = useMemo(() => {
     if (!canExpandL3) return undefined;
@@ -183,6 +199,9 @@ function VirtualWarehousePage() {
       <div className="page-actions">
         <Button type="primary" icon={<UploadOutlined />}>
           匯入配貨單
+        </Button>
+        <Button icon={<DownloadOutlined />} onClick={handleExportCsv}>
+          匯出
         </Button>
         <Button type="primary" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>
           通路分組設定
