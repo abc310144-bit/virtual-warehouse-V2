@@ -256,11 +256,17 @@ body {
   color: #1890ff;
   font-size: 14px;
   cursor: pointer;
-  transition: transform 0.2s ease;
+  transition: transform 0.25s ease;
 }
 
 .l2-expand-icon--open {
   transform: rotate(180deg);
+}
+
+.l3-breakdown-panel {
+  overflow: hidden;
+  transform-origin: top center;
+  animation: l3-breakdown-expand 0.28s ease-out;
 }
 
 .l3-breakdown-empty {
@@ -279,6 +285,25 @@ body {
 
 .warehouse-table .ant-table-expanded-row > td {
   background: #fafafa !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.warehouse-table .ant-table-expanded-row .l3-breakdown-panel {
+  padding: 8px 0 12px;
+}
+
+@keyframes l3-breakdown-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    max-height: 960px;
+    transform: translateY(0);
+  }
 }
 
 .hierarchy-filter-panel--embedded {

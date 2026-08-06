@@ -13,7 +13,7 @@ import { HierarchyFilterPanel } from '../components/virtualWarehouse/HierarchyFi
 import { L2HubManagementModal } from '../components/virtualWarehouse/L2HubManagementModal';
 import { useL2L3CascadeFilter } from '../hooks/useL2L3CascadeFilter';
 import { useL2HubManagement } from '../hooks/useL2HubManagement';
-import { exportWarehouseTableCsv } from '../utils/exportWarehouseCsv';
+import { exportWarehouseTableCsv } from '../utils/exportWarehouseTableCsv';
 import { filterWarehouseTableData } from '../utils/filterWarehouseTableData';
 import { WAREHOUSE_PRODUCT_MOCK } from '../data/warehouseProductSeed';
 import './VirtualWarehousePage.css';
@@ -92,20 +92,6 @@ function VirtualWarehousePage() {
     [tableData, selectedRowKeys],
   );
 
-  const handleExportCsv = () => {
-    if (tableData.length === 0) {
-      message.warning('目前沒有可匯出的資料');
-      return;
-    }
-    exportWarehouseTableCsv({
-      rows: tableData,
-      filter,
-      l2Hubs,
-      l3Channels,
-    });
-    message.success('已匯出 CSV');
-  };
-
   const expandable = useMemo(() => {
     if (!canExpandL3) return undefined;
 
@@ -126,22 +112,40 @@ function VirtualWarehousePage() {
         const breakdown = record.l3Breakdown ?? [];
         if (breakdown.length === 0) {
           return (
-            <div className="l3-breakdown-empty">第三層虛擬倉並無資料</div>
+            <div className="l3-breakdown-panel">
+              <div className="l3-breakdown-empty">銷售通路並無分配數量</div>
+            </div>
           );
         }
         return (
-          <Table
-            className="l3-breakdown-table"
-            rowKey="key"
-            columns={L3_BREAKDOWN_COLUMNS}
-            dataSource={breakdown}
-            pagination={false}
-            size="small"
-          />
+          <div className="l3-breakdown-panel">
+            <Table
+              className="l3-breakdown-table"
+              rowKey="key"
+              columns={L3_BREAKDOWN_COLUMNS}
+              dataSource={breakdown}
+              pagination={false}
+              size="small"
+            />
+          </div>
         );
       },
     };
   }, [canExpandL3, expandedRowKeys]);
+
+  const handleExportCsv = () => {
+    const result = exportWarehouseTableCsv({
+      rows: tableData,
+      filter,
+      l2Hubs,
+      l3Channels,
+    });
+    if (!result.success) {
+      message.warning(result.message);
+      return;
+    }
+    message.success(`已匯出 ${result.count} 筆資料`);
+  };
 
   const columns = useMemo(() => {
     const qtyColumns = [
@@ -200,7 +204,7 @@ function VirtualWarehousePage() {
         <Button type="primary" icon={<UploadOutlined />}>
           匯入配貨單
         </Button>
-        <Button icon={<DownloadOutlined />} onClick={handleExportCsv}>
+        <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCsv}>
           匯出
         </Button>
         <Button type="primary" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>

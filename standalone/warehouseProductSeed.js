@@ -64,6 +64,21 @@ function buildChannelProducts() {
   l2Hubs.forEach((l2, l2Index) => {
     const l3List = l3Channels.filter((channel) => channel.l2_hub_id === l2.id);
 
+    // 每個 L2 第一筆：僅在分組、未配至任何銷售通路（展開顯示空狀態）
+    const unallocatedSeed = (l2Index + 1) * 1000 + 99;
+    const unallocatedActualQty = 20 + (unallocatedSeed % 80);
+    rows.push({
+      key: `ch-${l2.id}-unallocated`,
+      viewScope: 'channel',
+      l2Id: l2.id,
+      sku: `UNALLOC-${String(l2Index + 1).padStart(3, '0')}`,
+      productName: `示範商品-未配銷售通路（${l2.name}）`,
+      expiryBatch: '2027-09-30',
+      allocatableQty: unallocatedActualQty,
+      actualQty: unallocatedActualQty,
+      mainAllocatableQty: 50,
+    });
+
     for (let i = 0; i < PRODUCTS_PER_L2; i += 1) {
       const template = PRODUCT_TEMPLATES[i];
       const seed = (l2Index + 1) * 100 + (i + 1) * 7;

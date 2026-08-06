@@ -235,66 +235,6 @@ function getSourceChannelLabel(filter, l2Hubs, l3Channels) {
   return l2?.name ?? '通路';
 }
 
-function escapeCsvCell(value) {
-  const text = value == null ? '' : String(value);
-  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
-
-function downloadCsv(filename, headers, rows) {
-  const lines = [
-    headers.map(escapeCsvCell).join(','),
-    ...rows.map((row) => row.map(escapeCsvCell).join(',')),
-  ];
-  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-function exportWarehouseTableCsv({ rows, filter, l2Hubs, l3Channels }) {
-  const mode = filter.viewMode === 'main' ? 'main' : filter.l3Id ? 'l3' : filter.l2Id ? 'l2' : 'main';
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-
-  if (mode === 'main') {
-    downloadCsv(
-      `虛擬倉-總倉-${stamp}.csv`,
-      ['SKU', '商品名稱', '效期_批號', '總倉', '當前可配數', '實際倉庫數量'],
-      rows.map((row) => [row.sku, row.productName, row.expiryBatch, '總倉', row.allocatableQty, row.actualQty]),
-    );
-    return;
-  }
-
-  if (mode === 'l3') {
-    const filterL3Name = l3Channels.find((channel) => channel.id === filter.l3Id)?.name ?? '';
-    downloadCsv(
-      `虛擬倉-銷售通路-${stamp}.csv`,
-      ['SKU', '商品名稱', '效期_批號', '銷售通路', '總倉當前可配數', '當前可配數', '實際倉庫數量'],
-      rows.map((row) => [
-        row.sku, row.productName, row.expiryBatch,
-        row.l3Name ?? l3Channels.find((channel) => channel.id === row.l3Id)?.name ?? filterL3Name,
-        row.mainAllocatableQty ?? '', row.allocatableQty, row.actualQty,
-      ]),
-    );
-    return;
-  }
-
-  const l2Name = l2Hubs.find((hub) => hub.id === filter.l2Id)?.name ?? '';
-  downloadCsv(
-    `虛擬倉-通路分組-${stamp}.csv`,
-    ['SKU', '商品名稱', '效期_批號', '通路分組', '總倉當前可配數', '當前可配數', '實際倉庫數量'],
-    rows.map((row) => [
-      row.sku, row.productName, row.expiryBatch, l2Name,
-      row.mainAllocatableQty ?? '', row.allocatableQty, row.actualQty,
-    ]),
-  );
-}
-
 function BulkAllocationHeaderTip({ title, tip }) {
   return (
     <span className="bulk-allocation-modal__header-with-tip">
@@ -1087,6 +1027,67 @@ const BRAND_OPTIONS = [
   { value: '英國Higher Living', label: '英國Higher Living' },
 ];
 
+function escapeCsvCell(value) {
+  const text = value == null ? '' : String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function downloadCsv(filename, headers, rows) {
+  const lines = [headers.map(escapeCsvCell).join(','), ...rows.map((row) => row.map(escapeCsvCell).join(','))];
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildCsvTimestamp() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+function exportWarehouseTableCsv({ rows, filter, l2Hubs, l3Channels }) {
+  if (!rows?.length) return { success: false, message: '目前沒有可匯出的資料' };
+
+  const l2NameById = new Map(l2Hubs.map((hub) => [hub.id, hub.name]));
+  const l3NameById = new Map(l3Channels.map((channel) => [channel.id, channel.name]));
+  let headers;
+  let csvRows;
+  let scope;
+
+  if (filter.viewMode === 'main') {
+    scope = '總倉';
+    headers = ['SKU', '商品名稱', '效期_批號', '位置', '當前可配數', '實際倉庫數量'];
+    csvRows = rows.map((row) => [row.sku, row.productName, row.expiryBatch, '總倉', row.allocatableQty, row.actualQty]);
+  } else if (filter.l3Id) {
+    scope = '銷售通路';
+    headers = ['SKU', '商品名稱', '效期_批號', '銷售通路', '總倉當前可配數', '當前可配數', '實際倉庫數量'];
+    csvRows = rows.map((row) => [
+      row.sku, row.productName, row.expiryBatch,
+      row.l3Name || l3NameById.get(row.l3Id) || filter.l3Id,
+      row.mainAllocatableQty ?? '', row.allocatableQty, row.actualQty,
+    ]);
+  } else if (filter.l2Id) {
+    scope = '通路分組';
+    headers = ['SKU', '商品名稱', '效期_批號', '通路分組', '總倉當前可配數', '當前可配數', '實際倉庫數量'];
+    csvRows = rows.map((row) => [
+      row.sku, row.productName, row.expiryBatch,
+      l2NameById.get(row.l2Id) || l2NameById.get(filter.l2Id) || filter.l2Id,
+      row.mainAllocatableQty ?? '', row.allocatableQty, row.actualQty,
+    ]);
+  } else {
+    return { success: false, message: '請先選擇虛擬倉篩選條件後再匯出' };
+  }
+
+  const filename = `虛擬倉匯出_${scope}_${buildCsvTimestamp()}.csv`;
+  downloadCsv(filename, headers, csvRows);
+  return { success: true, filename, count: csvRows.length };
+}
+
 function VirtualWarehousePage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [expandedRowKeys, setExpandedRowKeys] = useState([]);
@@ -1110,15 +1111,6 @@ function VirtualWarehousePage() {
     [tableData, selectedRowKeys],
   );
 
-  const handleExportCsv = () => {
-    if (tableData.length === 0) {
-      message.warning('目前沒有可匯出的資料');
-      return;
-    }
-    exportWarehouseTableCsv({ rows: tableData, filter, l2Hubs, l3Channels });
-    message.success('已匯出 CSV');
-  };
-
   const expandable = useMemo(() => {
     if (!canExpandL3) return undefined;
     return {
@@ -1137,11 +1129,13 @@ function VirtualWarehousePage() {
       expandedRowRender: (record) => {
         const breakdown = record.l3Breakdown ?? [];
         if (breakdown.length === 0) {
-          return <div className="l3-breakdown-empty">第三層虛擬倉並無資料</div>;
+          return <div className="l3-breakdown-panel"><div className="l3-breakdown-empty">銷售通路並無分配數量</div></div>;
         }
         return (
-          <Table className="l3-breakdown-table" rowKey="key" columns={L3_BREAKDOWN_COLUMNS}
-            dataSource={breakdown} pagination={false} size="small" />
+          <div className="l3-breakdown-panel">
+            <Table className="l3-breakdown-table" rowKey="key" columns={L3_BREAKDOWN_COLUMNS}
+              dataSource={breakdown} pagination={false} size="small" />
+          </div>
         );
       },
     };
@@ -1177,11 +1171,20 @@ function VirtualWarehousePage() {
     ];
   }, [filter.viewMode]);
 
+  const handleExportCsv = () => {
+    const result = exportWarehouseTableCsv({ rows: tableData, filter, l2Hubs, l3Channels });
+    if (!result.success) {
+      message.warning(result.message);
+      return;
+    }
+    message.success(`已匯出 ${result.count} 筆資料`);
+  };
+
   return (
     <div className="virtual-warehouse-page">
       <div className="page-actions">
         <Button type="primary" icon={<UploadOutlined />}>匯入配貨單</Button>
-        <Button icon={<DownloadOutlined />} onClick={handleExportCsv}>匯出</Button>
+        <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCsv}>匯出</Button>
         <Button type="primary" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>通路分組設定</Button>
         <Button icon={<FilterOutlined />}>篩選</Button>
       </div>
