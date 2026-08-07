@@ -259,7 +259,7 @@ function VirtualWarehousePage() {
             <RangePicker placeholder={['開始日期', '結束日期']} />
           </label>
           <label className="filter-field col-6">
-            <span className="filter-label">批次</span>
+            <span className="filter-label">批號</span>
             <Input />
           </label>
           <div className="filter-actions col-12">

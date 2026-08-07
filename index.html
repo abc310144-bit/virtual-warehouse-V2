@@ -2169,7 +2169,7 @@ function VirtualWarehousePage() {
               filterOption={(input, option) => String(option?.label ?? '').toLowerCase().includes(input.trim().toLowerCase())} />
           </label>
           <label className="filter-field col-6"><span className="filter-label">效期</span><RangePicker placeholder={['開始日期', '結束日期']} /></label>
-          <label className="filter-field col-6"><span className="filter-label">批次</span><Input /></label>
+          <label className="filter-field col-6"><span className="filter-label">批號</span><Input /></label>
           <div className="filter-actions col-12">
             <Button onClick={() => { resetFilter(); setBrandFilter(undefined); }}>清除篩選條件</Button>
             <Button type="primary">搜尋</Button>
