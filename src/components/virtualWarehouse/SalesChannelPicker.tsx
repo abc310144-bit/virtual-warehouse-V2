@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Select, Tooltip } from 'antd';
-import { DeleteOutlined } from '@ant-design/icons';
+import { Button, Checkbox, Modal, Select, Tooltip } from 'antd';
+import { DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import {
   PARTNER_CHANNEL_CATALOG,
   getPartnerTypeByKey,
@@ -13,6 +13,26 @@ export interface SalesChannelPickerProps {
   onChange?: (value: string[]) => void;
   l3Channels: L3Channel[];
   editingHubId?: string | null;
+  /** 配回目標名稱（通常為目前通路分組名稱） */
+  hubName?: string;
+}
+
+const L3_REMOVE_DISMISS_KEY = 'vw-dismiss-l3-remove-confirm-date-v1';
+
+function getTodayKey(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function isL3RemoveConfirmDismissedToday(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(L3_REMOVE_DISMISS_KEY) === getTodayKey();
+}
+
+function setL3RemoveConfirmDismissedToday(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(L3_REMOVE_DISMISS_KEY, getTodayKey());
 }
 
 function isChannelTakenByOtherHub(
@@ -40,12 +60,50 @@ function findPartnerTypeKeyByChannelName(channelName: string): string | undefine
   return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
 }
 
+function confirmRemoveBoundChannels(hubName: string): Promise<boolean> {
+  if (isL3RemoveConfirmDismissedToday()) {
+    return Promise.resolve(true);
+  }
+
+  let dontRemindToday = false;
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title: '確認刪除銷售通路',
+      icon: <ExclamationCircleFilled />,
+      content: (
+        <div className="sales-channel-picker__remove-confirm">
+          <div>
+            {`刪除後，該銷售通路所有商品將自動配回「${hubName}」`}
+          </div>
+          <Checkbox
+            className="sales-channel-picker__remove-confirm-check"
+            onChange={(event) => {
+              dontRemindToday = event.target.checked;
+            }}
+          >
+            今日不再提醒
+          </Checkbox>
+        </div>
+      ),
+      okText: '確認刪除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        if (dontRemindToday) setL3RemoveConfirmDismissedToday();
+        resolve(true);
+      },
+      onCancel: () => resolve(false),
+    });
+  });
+}
+
 /** 兩層銷售通路選擇：合作通路類型 → 通路名稱 */
 export function SalesChannelPicker({
   value = [],
   onChange,
   l3Channels,
   editingHubId,
+  hubName = '此通路分組',
 }: SalesChannelPickerProps) {
   const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
 
@@ -128,6 +186,21 @@ export function SalesChannelPicker({
 
   const currentTypeSelectedCount = currentTypeChannelIds.filter((id) => value.includes(id)).length;
 
+  const applyChange = async (nextIds: string[]) => {
+    const removedIds = value.filter((id) => !nextIds.includes(id));
+    const removedBoundIds = removedIds.filter((id) => {
+      const channel = idToChannel.get(id);
+      return Boolean(editingHubId && channel?.l2_hub_id === editingHubId);
+    });
+
+    if (removedBoundIds.length > 0) {
+      const confirmed = await confirmRemoveBoundChannels(hubName);
+      if (!confirmed) return;
+    }
+
+    onChange?.(nextIds);
+  };
+
   const handleSelectAllForType = (typeKey: string) => {
     const type = getPartnerTypeByKey(typeKey);
     if (!type) return;
@@ -170,7 +243,9 @@ export function SalesChannelPicker({
                 icon={<DeleteOutlined />}
                 className="sales-channel-picker__clear-all"
                 disabled={value.length === 0}
-                onClick={() => onChange?.([])}
+                onClick={() => {
+                  void applyChange([]);
+                }}
               />
             </Tooltip>
           </div>
@@ -186,7 +261,9 @@ export function SalesChannelPicker({
           }
           value={value}
           options={nameOptions}
-          onChange={(nextIds) => onChange?.(nextIds)}
+          onChange={(nextIds) => {
+            void applyChange(nextIds);
+          }}
           optionFilterProp="label"
           disabled={!currentType || currentType.channels.length === 0}
         />

@@ -1,11 +1,12 @@
 const { useState, useEffect, useMemo, useCallback } = React;
 const {
   Layout, Menu, Button, DatePicker, Input, InputNumber, Select, Table, ConfigProvider,
-  Modal, Drawer, Form, Space, Switch, message, Radio, Tooltip,
+  Modal, Drawer, Form, Space, Switch, message, Radio, Tooltip, Checkbox,
 } = antd;
 const {
   UploadOutlined, DownloadOutlined, FilterOutlined, SettingOutlined,
   PlusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined, CaretDownFilled,
+  ExclamationCircleFilled,
 } = icons;
 const { Header, Sider, Content } = Layout;
 const { RangePicker } = DatePicker;
@@ -771,7 +772,53 @@ function findPartnerTypeKeyByChannelName(channelName) {
   return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
 }
 
-function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) {
+const L3_REMOVE_DISMISS_KEY = 'vw-dismiss-l3-remove-confirm-date-v1';
+
+function getTodayKey() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function isL3RemoveConfirmDismissedToday() {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(L3_REMOVE_DISMISS_KEY) === getTodayKey();
+}
+
+function setL3RemoveConfirmDismissedToday() {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(L3_REMOVE_DISMISS_KEY, getTodayKey());
+}
+
+function confirmRemoveBoundChannels(hubName) {
+  if (isL3RemoveConfirmDismissedToday()) return Promise.resolve(true);
+  let dontRemindToday = false;
+  return new Promise((resolve) => {
+    Modal.confirm({
+      title: '確認刪除銷售通路',
+      icon: <ExclamationCircleFilled />,
+      content: (
+        <div className="sales-channel-picker__remove-confirm">
+          <div>{`刪除後，該銷售通路所有商品將自動配回「${hubName}」`}</div>
+          <Checkbox className="sales-channel-picker__remove-confirm-check"
+            onChange={(event) => { dontRemindToday = event.target.checked; }}>
+            今日不再提醒
+          </Checkbox>
+        </div>
+      ),
+      okText: '確認刪除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        if (dontRemindToday) setL3RemoveConfirmDismissedToday();
+        resolve(true);
+      },
+      onCancel: () => resolve(false),
+    });
+  });
+}
+
+function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hubName = '此通路分組' }) {
   const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
 
   const availableChannels = useMemo(
@@ -833,6 +880,19 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) 
 
   const currentTypeSelectedCount = currentTypeChannelIds.filter((id) => value.includes(id)).length;
 
+  const applyChange = async (nextIds) => {
+    const removedIds = value.filter((id) => !nextIds.includes(id));
+    const removedBoundIds = removedIds.filter((id) => {
+      const channel = idToChannel.get(id);
+      return Boolean(editingHubId && channel?.l2_hub_id === editingHubId);
+    });
+    if (removedBoundIds.length > 0) {
+      const confirmed = await confirmRemoveBoundChannels(hubName);
+      if (!confirmed) return;
+    }
+    onChange?.(nextIds);
+  };
+
   const handleSelectAllForType = (typeKey) => {
     const type = getPartnerTypeByKey(typeKey);
     if (!type) return;
@@ -864,13 +924,13 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) 
               onClick={() => handleSelectAllForType(partnerTypeKey)}>全選</Button>
             <Tooltip title="全部刪除">
               <Button type="text" icon={<DeleteOutlined />} className="sales-channel-picker__clear-all"
-                disabled={value.length === 0} onClick={() => onChange?.([])} />
+                disabled={value.length === 0} onClick={() => { void applyChange([]); }} />
             </Tooltip>
           </div>
         </div>
         <Select mode="multiple" allowClear className="sales-channel-picker__name-select"
           placeholder={currentType && currentType.channels.length === 0 ? '此類型尚無通路' : '選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'}
-          value={value} options={nameOptions} onChange={(nextIds) => onChange?.(nextIds)} optionFilterProp="label"
+          value={value} options={nameOptions} onChange={(nextIds) => { void applyChange(nextIds); }} optionFilterProp="label"
           disabled={!currentType || currentType.channels.length === 0} />
       </div>
       <div className="sales-channel-picker__summary">
@@ -947,7 +1007,11 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
         <Form.Item name="l3_channel_ids" label="銷售通路" rules={[
           { required: true, type: 'array', min: 1, message: '請至少選擇一個銷售通路' },
         ]}>
-          <SalesChannelPicker l3Channels={l3Channels} editingHubId={editingHub?.id ?? null} />
+          <SalesChannelPicker
+            l3Channels={l3Channels}
+            editingHubId={editingHub?.id ?? null}
+            hubName={editingHub?.name ?? '此通路分組'}
+          />
         </Form.Item>
       </Form>
     </Drawer>

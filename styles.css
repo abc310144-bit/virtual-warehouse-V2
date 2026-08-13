@@ -642,6 +642,16 @@ body {
   margin-left: 4px;
 }
 
+.sales-channel-picker__remove-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sales-channel-picker__remove-confirm-check {
+  margin-left: 0;
+}
+
 .allocation-modal__add-row {
   padding: 0;
 }
