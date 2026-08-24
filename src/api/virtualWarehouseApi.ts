@@ -10,6 +10,7 @@ import type {
   L2Hub,
   L2HubDetail,
   L2HubListItem,
+  L3AcceptanceRulePayload,
   L3Channel,
   UpdateL2HubPayload,
 } from '../types/virtualWarehouse';
@@ -18,7 +19,7 @@ import { L2HubErrorCode } from '../types/virtualWarehouse';
 const L2_STORE_KEY = 'vw-mock-l2-hubs';
 const L3_STORE_KEY = 'vw-mock-l3-channels';
 const MOCK_STORE_VERSION_KEY = 'vw-mock-store-version';
-const MOCK_STORE_VERSION = '2026-07-22-tw-department';
+const MOCK_STORE_VERSION = '2026-08-24-l3-acceptance';
 
 function loadMockStore<T>(key: string, initial: T): T {
   if (typeof localStorage === 'undefined') return structuredClone(initial);
@@ -56,13 +57,31 @@ function toListItem(hub: L2Hub): L2HubListItem {
   return { ...hub, l3_channel_count: countL3ByHub(hub.id) };
 }
 
-function bindL3Channels(hubId: string, channelIds: string[]): void {
+function bindL3Channels(
+  hubId: string,
+  channelIds: string[],
+  l3AcceptanceRules: L3AcceptanceRulePayload[] = [],
+): void {
+  const ruleByChannelId = new Map(
+    l3AcceptanceRules.map((rule) => [rule.l3_channel_id, rule]),
+  );
   l3ChannelsStore = l3ChannelsStore.map((channel) => {
     if (channelIds.includes(channel.id)) {
-      return { ...channel, l2_hub_id: hubId };
+      const rule = ruleByChannelId.get(channel.id);
+      return {
+        ...channel,
+        l2_hub_id: hubId,
+        acceptance_domestic: rule?.acceptance_domestic,
+        acceptance_foreign: rule?.acceptance_foreign,
+      };
     }
     if (channel.l2_hub_id === hubId && !channelIds.includes(channel.id)) {
-      return { ...channel, l2_hub_id: null };
+      return {
+        ...channel,
+        l2_hub_id: null,
+        acceptance_domestic: undefined,
+        acceptance_foreign: undefined,
+      };
     }
     return channel;
   });
@@ -119,7 +138,7 @@ export const virtualWarehouseApi = {
       created_at: new Date().toISOString(),
     };
     l2HubsStore = [...l2HubsStore, newHub];
-    bindL3Channels(newHub.id, payload.l3_channel_ids ?? []);
+    bindL3Channels(newHub.id, payload.l3_channel_ids ?? [], payload.l3_acceptance_rules ?? []);
     persistMockStores();
     return { success: true, data: toListItem(newHub) };
   },
@@ -150,7 +169,7 @@ export const virtualWarehouseApi = {
       updated_at: new Date().toISOString(),
     };
     l2HubsStore = l2HubsStore.map((h) => (h.id === payload.id ? updated : h));
-    bindL3Channels(payload.id, payload.l3_channel_ids ?? []);
+    bindL3Channels(payload.id, payload.l3_channel_ids ?? [], payload.l3_acceptance_rules ?? []);
     persistMockStores();
     return { success: true, data: toListItem(updated) };
   },
@@ -177,7 +196,14 @@ export const virtualWarehouseApi = {
       };
     }
     l3ChannelsStore = l3ChannelsStore.map((c) =>
-      c.l2_hub_id === id ? { ...c, l2_hub_id: null } : c,
+      c.l2_hub_id === id
+        ? {
+            ...c,
+            l2_hub_id: null,
+            acceptance_domestic: undefined,
+            acceptance_foreign: undefined,
+          }
+        : c,
     );
     l2HubsStore = l2HubsStore.filter((h) => h.id !== id);
     persistMockStores();

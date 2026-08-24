@@ -50,6 +50,9 @@ export interface L3Channel {
   /** null 表示尚未綁定任何 L2（仍視為 L1 總倉管轄） */
   l2_hub_id: string | null;
   status: EntityStatus;
+  /** 有設定時，該通路商品只吃 L3 允收，不再套用所屬 L2 */
+  acceptance_domestic?: AcceptanceRuleSettings;
+  acceptance_foreign?: AcceptanceRuleSettings;
 }
 
 /** 列表展示用 L2（含 L3 計數） */
@@ -74,11 +77,19 @@ export const DEFAULT_FILTER_STATE: HierarchyFilterState = {
 
 // ─── API Request / Response ───────────────────────────────────────────────
 
+/** 單一 L3 通路的允收覆寫（已正規化） */
+export interface L3AcceptanceRulePayload {
+  l3_channel_id: string;
+  acceptance_domestic?: AcceptanceRuleSettings;
+  acceptance_foreign?: AcceptanceRuleSettings;
+}
+
 export interface CreateL2HubPayload {
   name: string;
   l3_channel_ids: string[];
   acceptance_domestic?: AcceptanceRuleSettings;
   acceptance_foreign?: AcceptanceRuleSettings;
+  l3_acceptance_rules?: L3AcceptanceRulePayload[];
   status?: EntityStatus;
 }
 
@@ -115,11 +126,20 @@ export interface L3TransferConflict {
   fromL2Name: string;
 }
 
+export interface L3AcceptanceRuleFormRow {
+  _rowKey: string;
+  l3_channel_id?: string;
+  acceptance_domestic: AcceptanceRuleFormValues;
+  acceptance_foreign: AcceptanceRuleFormValues;
+}
+
 export interface SaveL2HubFormValues {
   name: string;
   l3_channel_ids: string[];
   acceptance_domestic?: AcceptanceRuleFormValues;
   acceptance_foreign?: AcceptanceRuleFormValues;
+  enable_l3_acceptance?: boolean;
+  l3_acceptance_rules?: L3AcceptanceRuleFormRow[];
 }
 
 export const EMPTY_ACCEPTANCE_FORM: AcceptanceRuleFormValues = {
@@ -130,3 +150,12 @@ export const EMPTY_ACCEPTANCE_FORM: AcceptanceRuleFormValues = {
   tier_91_365: '',
   tier_366_plus: '',
 };
+
+export function createEmptyL3AcceptanceFormRow(): L3AcceptanceRuleFormRow {
+  return {
+    _rowKey: `l3-acc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    l3_channel_id: undefined,
+    acceptance_domestic: { ...EMPTY_ACCEPTANCE_FORM },
+    acceptance_foreign: { ...EMPTY_ACCEPTANCE_FORM },
+  };
+}

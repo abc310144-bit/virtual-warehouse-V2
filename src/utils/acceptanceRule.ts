@@ -1,8 +1,21 @@
 import type {
   AcceptanceRuleFormValues,
   AcceptanceRuleSettings,
+  L3AcceptanceRuleFormRow,
+  L3AcceptanceRulePayload,
+  L3Channel,
 } from '../types/virtualWarehouse';
-import { EMPTY_ACCEPTANCE_FORM } from '../types/virtualWarehouse';
+import {
+  EMPTY_ACCEPTANCE_FORM,
+  createEmptyL3AcceptanceFormRow,
+} from '../types/virtualWarehouse';
+
+export function getByPath(obj: unknown, path: Array<string | number>): unknown {
+  return path.reduce<unknown>((acc, key) => {
+    if (acc == null || typeof acc !== 'object') return undefined;
+    return (acc as Record<string | number, unknown>)[key];
+  }, obj);
+}
 
 /** 儲存前正規化允收規範 */
 export function normalizeAcceptanceSettings(
@@ -85,4 +98,43 @@ export function toFormAcceptance(
     tier_91_365: '',
     tier_366_plus: '',
   };
+}
+
+export function channelHasL3AcceptanceOverride(channel: L3Channel): boolean {
+  return Boolean(channel.acceptance_domestic || channel.acceptance_foreign);
+}
+
+export function toL3AcceptanceFormRows(channels: L3Channel[]): L3AcceptanceRuleFormRow[] {
+  const rows = channels
+    .filter(channelHasL3AcceptanceOverride)
+    .map((channel) => ({
+      _rowKey: channel.id,
+      l3_channel_id: channel.id,
+      acceptance_domestic: toFormAcceptance(channel.acceptance_domestic),
+      acceptance_foreign: toFormAcceptance(channel.acceptance_foreign),
+    }));
+  return rows.length > 0 ? rows : [createEmptyL3AcceptanceFormRow()];
+}
+
+export function normalizeL3AcceptanceRules(
+  enabled: boolean | undefined,
+  rows: L3AcceptanceRuleFormRow[] | undefined,
+  selectedL3Ids: string[],
+): L3AcceptanceRulePayload[] {
+  if (!enabled) return [];
+  const selected = new Set(selectedL3Ids);
+  const seen = new Set<string>();
+  const result: L3AcceptanceRulePayload[] = [];
+
+  for (const row of rows ?? []) {
+    const id = row.l3_channel_id;
+    if (!id || !selected.has(id) || seen.has(id)) continue;
+    const acceptance_domestic = normalizeAcceptanceSettings(row.acceptance_domestic);
+    const acceptance_foreign = normalizeAcceptanceSettings(row.acceptance_foreign);
+    if (!acceptance_domestic && !acceptance_foreign) continue;
+    seen.add(id);
+    result.push({ l3_channel_id: id, acceptance_domestic, acceptance_foreign });
+  }
+
+  return result;
 }

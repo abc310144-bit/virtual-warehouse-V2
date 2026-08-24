@@ -9,7 +9,7 @@ import type {
   SaveL2HubFormValues,
 } from '../types/virtualWarehouse';
 import { L2HubErrorCode } from '../types/virtualWarehouse';
-import { normalizeAcceptanceSettings } from '../utils/acceptanceRule';
+import { normalizeAcceptanceSettings, normalizeL3AcceptanceRules } from '../utils/acceptanceRule';
 
 interface UseL2HubManagementReturn {
   l2Hubs: L2HubListItem[];
@@ -87,12 +87,18 @@ export function useL2HubManagement(): UseL2HubManagementReturn {
 
   const saveL2Hub = useCallback(
     async (values: SaveL2HubFormValues, editingId?: string): Promise<boolean> => {
+      const l3Ids = values.l3_channel_ids ?? [];
       const payload = {
         name: values.name.trim(),
-        l3_channel_ids: values.l3_channel_ids ?? [],
+        l3_channel_ids: l3Ids,
         acceptance_domestic: normalizeAcceptanceSettings(values.acceptance_domestic),
         acceptance_foreign: normalizeAcceptanceSettings(values.acceptance_foreign),
-        status: 'active',
+        l3_acceptance_rules: normalizeL3AcceptanceRules(
+          values.enable_l3_acceptance,
+          values.l3_acceptance_rules,
+          l3Ids,
+        ),
+        status: 'active' as const,
       };
 
       const result = editingId

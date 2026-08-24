@@ -9,12 +9,13 @@ import {
 } from 'antd';
 import type { FormInstance } from 'antd';
 import type { L2HubListItem, L3Channel, SaveL2HubFormValues } from '../../types/virtualWarehouse';
-import { EMPTY_ACCEPTANCE_FORM } from '../../types/virtualWarehouse';
+import { EMPTY_ACCEPTANCE_FORM, createEmptyL3AcceptanceFormRow } from '../../types/virtualWarehouse';
 import { buildL3TransferConfirmContent } from '../../hooks/useL2HubManagement';
 import type { L3TransferConflict } from '../../types/virtualWarehouse';
 import { AcceptanceRuleFields, toFormAcceptance } from './AcceptanceRuleFields';
+import { L3AcceptanceRuleList } from './L3AcceptanceRuleList';
 import { SalesChannelPicker } from './SalesChannelPicker';
-import { getMissingAcceptanceScopeLabels } from '../../utils/acceptanceRule';
+import { getMissingAcceptanceScopeLabels, toL3AcceptanceFormRows } from '../../utils/acceptanceRule';
 
 export interface L2HubFormDrawerProps {
   open: boolean;
@@ -84,14 +85,16 @@ export function L2HubFormDrawer({
   useEffect(() => {
     if (!open) return;
     if (editingHub) {
-      const boundIds = l3Channels
-        .filter((c) => c.l2_hub_id === editingHub.id)
-        .map((c) => c.id);
+      const boundChannels = l3Channels.filter((c) => c.l2_hub_id === editingHub.id);
+      const boundIds = boundChannels.map((c) => c.id);
+      const l3Rows = toL3AcceptanceFormRows(boundChannels);
       form.setFieldsValue({
         name: editingHub.name,
         l3_channel_ids: boundIds,
         acceptance_domestic: toFormAcceptance(editingHub.acceptance_domestic),
         acceptance_foreign: toFormAcceptance(editingHub.acceptance_foreign),
+        enable_l3_acceptance: l3Rows.some((row) => Boolean(row.l3_channel_id)),
+        l3_acceptance_rules: l3Rows,
       });
     } else {
       form.resetFields();
@@ -99,6 +102,8 @@ export function L2HubFormDrawer({
         l3_channel_ids: [],
         acceptance_domestic: { ...EMPTY_ACCEPTANCE_FORM },
         acceptance_foreign: { ...EMPTY_ACCEPTANCE_FORM },
+        enable_l3_acceptance: false,
+        l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()],
       });
     }
   }, [open, editingHub, l3Channels, form]);
@@ -117,7 +122,7 @@ export function L2HubFormDrawer({
   return (
     <Drawer
       title={isEditing ? '編輯通路分組' : '新增通路分組'}
-      width={560}
+      width={600}
       open={open}
       onClose={onClose}
       destroyOnClose
@@ -136,6 +141,10 @@ export function L2HubFormDrawer({
         layout="vertical"
         onFinish={handleFinish}
         requiredMark
+        initialValues={{
+          enable_l3_acceptance: false,
+          l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()],
+        }}
       >
         <Form.Item
           name="name"
@@ -158,8 +167,8 @@ export function L2HubFormDrawer({
         </Form.Item>
 
         <div className="l2-hub-form-drawer__section-title">允收天數</div>
-        <AcceptanceRuleFields title="國內商品" prefix="acceptance_domestic" />
-        <AcceptanceRuleFields title="國外商品" prefix="acceptance_foreign" />
+        <AcceptanceRuleFields title="國內商品" namePath={['acceptance_domestic']} />
+        <AcceptanceRuleFields title="國外商品" namePath={['acceptance_foreign']} />
 
         <Form.Item
           name="l3_channel_ids"
@@ -179,6 +188,8 @@ export function L2HubFormDrawer({
             hubName={editingHub?.name ?? '此通路分組'}
           />
         </Form.Item>
+
+        <L3AcceptanceRuleList l3Channels={l3Channels} />
       </Form>
     </Drawer>
   );

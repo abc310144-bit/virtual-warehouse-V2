@@ -5,7 +5,7 @@ const {
 } = antd;
 const {
   UploadOutlined, DownloadOutlined, FilterOutlined, SettingOutlined,
-  PlusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined, CaretDownFilled,
+  PlusOutlined, MinusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined, CaretDownFilled,
   ExclamationCircleFilled,
 } = icons;
 const { Header, Sider, Content } = Layout;
@@ -54,6 +54,45 @@ function getMissingAcceptanceScopeLabels(values) {
   if (!isAcceptanceConfigured(values.acceptance_domestic)) missing.push('國內商品');
   if (!isAcceptanceConfigured(values.acceptance_foreign)) missing.push('國外商品');
   return missing;
+}
+function getByPath(obj, path) {
+  return path.reduce((acc, key) => (acc == null ? undefined : acc[key]), obj);
+}
+function createEmptyL3AcceptanceFormRow() {
+  return {
+    _rowKey: `l3-acc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    l3_channel_id: undefined,
+    acceptance_domestic: { ...EMPTY_ACCEPTANCE_FORM },
+    acceptance_foreign: { ...EMPTY_ACCEPTANCE_FORM },
+  };
+}
+function channelHasL3AcceptanceOverride(channel) {
+  return Boolean(channel.acceptance_domestic || channel.acceptance_foreign);
+}
+function toL3AcceptanceFormRows(channels) {
+  const rows = channels.filter(channelHasL3AcceptanceOverride).map((channel) => ({
+    _rowKey: channel.id,
+    l3_channel_id: channel.id,
+    acceptance_domestic: toFormAcceptance(channel.acceptance_domestic),
+    acceptance_foreign: toFormAcceptance(channel.acceptance_foreign),
+  }));
+  return rows.length > 0 ? rows : [createEmptyL3AcceptanceFormRow()];
+}
+function normalizeL3AcceptanceRules(enabled, rows, selectedL3Ids) {
+  if (!enabled) return [];
+  const selected = new Set(selectedL3Ids);
+  const seen = new Set();
+  const result = [];
+  for (const row of rows ?? []) {
+    const id = row.l3_channel_id;
+    if (!id || !selected.has(id) || seen.has(id)) continue;
+    const acceptance_domestic = normalizeAcceptanceSettings(row.acceptance_domestic);
+    const acceptance_foreign = normalizeAcceptanceSettings(row.acceptance_foreign);
+    if (!acceptance_domestic && !acceptance_foreign) continue;
+    seen.add(id);
+    result.push({ l3_channel_id: id, acceptance_domestic, acceptance_foreign });
+  }
+  return result;
 }
 function confirmMissingAcceptance(values) {
   const missing = getMissingAcceptanceScopeLabels(values);
@@ -104,7 +143,7 @@ function toFormAcceptance(settings) {
 const L2_STORE_KEY = 'vw-mock-l2-hubs';
 const L3_STORE_KEY = 'vw-mock-l3-channels';
 const MOCK_STORE_VERSION_KEY = 'vw-mock-store-version';
-const MOCK_STORE_VERSION = '2026-07-22-tw-department';
+const MOCK_STORE_VERSION = '2026-08-24-l3-acceptance';
 
 function loadMockStore(key, initial) {
   try {
@@ -132,10 +171,21 @@ const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
 function countL3(hubId) { return l3Store.filter((c) => c.l2_hub_id === hubId).length; }
 function toListItem(hub) { return { ...hub, l3_channel_count: countL3(hub.id) }; }
-function bindL3(hubId, ids) {
+function bindL3(hubId, ids, l3AcceptanceRules = []) {
+  const ruleByChannelId = new Map((l3AcceptanceRules ?? []).map((rule) => [rule.l3_channel_id, rule]));
   l3Store = l3Store.map((c) => {
-    if (ids.includes(c.id)) return { ...c, l2_hub_id: hubId };
-    if (c.l2_hub_id === hubId && !ids.includes(c.id)) return { ...c, l2_hub_id: null };
+    if (ids.includes(c.id)) {
+      const rule = ruleByChannelId.get(c.id);
+      return {
+        ...c,
+        l2_hub_id: hubId,
+        acceptance_domestic: rule?.acceptance_domestic,
+        acceptance_foreign: rule?.acceptance_foreign,
+      };
+    }
+    if (c.l2_hub_id === hubId && !ids.includes(c.id)) {
+      return { ...c, l2_hub_id: null, acceptance_domestic: undefined, acceptance_foreign: undefined };
+    }
     return c;
   });
 }
@@ -156,7 +206,7 @@ const api = {
       created_at: new Date().toISOString(),
     };
     l2Store = [...l2Store, hub];
-    bindL3(hub.id, p.l3_channel_ids ?? []);
+    bindL3(hub.id, p.l3_channel_ids ?? [], p.l3_acceptance_rules ?? []);
     persistMockStores();
     return { success: true, data: toListItem(hub) };
   },
@@ -174,7 +224,7 @@ const api = {
       status: p.status,
       updated_at: new Date().toISOString(),
     };
-    bindL3(p.id, p.l3_channel_ids ?? []);
+    bindL3(p.id, p.l3_channel_ids ?? [], p.l3_acceptance_rules ?? []);
     persistMockStores();
     return { success: true, data: toListItem(l2Store[idx]) };
   },
@@ -182,7 +232,9 @@ const api = {
     await delay();
     if (L2_HAS_INVENTORY.has(id)) return { success: false, error: { message: '此通路分組尚有剩餘庫存，無法刪除' } };
     if (L2_HAS_ORDERS.has(id)) return { success: false, error: { message: '此通路分組尚有未完結訂單，無法刪除' } };
-    l3Store = l3Store.map((c) => (c.l2_hub_id === id ? { ...c, l2_hub_id: null } : c));
+    l3Store = l3Store.map((c) => (c.l2_hub_id === id
+      ? { ...c, l2_hub_id: null, acceptance_domestic: undefined, acceptance_foreign: undefined }
+      : c));
     l2Store = l2Store.filter((h) => h.id !== id);
     persistMockStores();
     return { success: true };
@@ -589,6 +641,11 @@ function useL2HubManagement() {
       l3_channel_ids: values.l3_channel_ids ?? [],
       acceptance_domestic: normalizeAcceptanceSettings(values.acceptance_domestic),
       acceptance_foreign: normalizeAcceptanceSettings(values.acceptance_foreign),
+      l3_acceptance_rules: normalizeL3AcceptanceRules(
+        values.enable_l3_acceptance,
+        values.l3_acceptance_rules,
+        values.l3_channel_ids ?? [],
+      ),
       status: 'active',
     };
     const res = editingId ? await api.updateL2Hub({ id: editingId, ...payload }) : await api.createL2Hub(payload);
@@ -720,7 +777,11 @@ function FlatDaysInput({ value, onChange }) {
   );
 }
 
-function AcceptanceRuleFields({ title, prefix }) {
+function AcceptanceRuleFields({ title, prefix, namePath, watchPath }) {
+  const path = namePath ?? [prefix];
+  const valuePath = watchPath ?? path;
+  const form = Form.useFormInstance();
+  const useTierRatio = Form.useWatch([...valuePath, 'use_tier_ratio'], form);
   const tiers = [
     { name: 'tier_0_30', label: '0-30天' },
     { name: 'tier_31_90', label: '31-90天' },
@@ -732,34 +793,92 @@ function AcceptanceRuleFields({ title, prefix }) {
       <div className="acceptance-rule-fields__heading">{title}</div>
       <div className="acceptance-rule-fields__toggle-row">
         <span className="acceptance-rule-fields__toggle-label">是否啟用總效期分級比例</span>
-        <Form.Item name={[prefix, 'use_tier_ratio']} noStyle>
+        <Form.Item name={[...path, 'use_tier_ratio']} noStyle>
           <Radio.Group>
             <Radio value={true}>是</Radio>
             <Radio value={false}>否</Radio>
           </Radio.Group>
         </Form.Item>
       </div>
-      <Form.Item noStyle shouldUpdate={(prev, cur) => prev?.[prefix]?.use_tier_ratio !== cur?.[prefix]?.use_tier_ratio}>
-        {({ getFieldValue }) => {
-          const useTierRatio = getFieldValue([prefix, 'use_tier_ratio']);
-          if (useTierRatio) {
+      {useTierRatio ? (
+        <div className="acceptance-rule-fields__tier-group">
+          {tiers.map(({ name, label }) => (
+            <Form.Item key={name} name={[...path, name]} label={label} className="acceptance-rule-fields__item">
+              <RatioInput />
+            </Form.Item>
+          ))}
+        </div>
+      ) : (
+        <Form.Item name={[...path, 'flat_value']} className="acceptance-rule-fields__item">
+          <FlatDaysInput />
+        </Form.Item>
+      )}
+    </div>
+  );
+}
+
+function toL3RowArray(rows) {
+  if (Array.isArray(rows)) return rows;
+  if (rows && typeof rows === 'object') {
+    return Object.keys(rows).sort((a, b) => Number(a) - Number(b)).map((key) => rows[key]).filter(Boolean);
+  }
+  return [];
+}
+
+function L3AcceptanceRuleList({ l3Channels }) {
+  const form = Form.useFormInstance();
+  const enabled = Form.useWatch('enable_l3_acceptance', form) === true;
+  const selectedIds = Form.useWatch('l3_channel_ids', form) ?? [];
+  const watchedRows = Form.useWatch('l3_acceptance_rules', form);
+  const idToName = new Map(l3Channels.map((channel) => [channel.id, channel.name]));
+
+  const handleEnableChange = (value) => {
+    if (!value) return;
+    if (toL3RowArray(form.getFieldValue('l3_acceptance_rules')).length === 0) {
+      form.setFieldsValue({ l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()] });
+    }
+  };
+
+  return (
+    <div className="l3-acceptance-rule-list">
+      <div className="l2-hub-form-drawer__section-title">是否設定銷售通路允收限制</div>
+      <Form.Item name="enable_l3_acceptance" className="l3-acceptance-rule-list__toggle">
+        <Radio.Group onChange={(event) => handleEnableChange(event.target.value === true)}>
+          <Radio value={true}>是</Radio>
+          <Radio value={false}>否</Radio>
+        </Radio.Group>
+      </Form.Item>
+      <Form.List name="l3_acceptance_rules">
+        {(fields, { add, remove }) => (
+          enabled ? fields.map((field, index) => {
+            const currentId = toL3RowArray(watchedRows)[index]?.l3_channel_id;
+            const isOrphan = Boolean(currentId && !selectedIds.includes(currentId));
+            const takenIds = new Set(toL3RowArray(watchedRows).map((item, itemIndex) => (itemIndex === index ? undefined : item.l3_channel_id)).filter(Boolean));
+            const optionMap = new Map();
+            if (currentId && !selectedIds.includes(currentId)) {
+              optionMap.set(currentId, { value: currentId, label: idToName.get(currentId) ?? currentId, disabled: true });
+            }
+            selectedIds.forEach((id) => {
+              optionMap.set(id, { value: id, label: idToName.get(id) ?? id, disabled: takenIds.has(id) });
+            });
             return (
-              <div className="acceptance-rule-fields__tier-group">
-                {tiers.map(({ name, label }) => (
-                  <Form.Item key={name} name={[prefix, name]} label={label} className="acceptance-rule-fields__item">
-                    <RatioInput />
+              <div className="l3-acceptance-rule-row" key={field.key}>
+                <div className="l3-acceptance-rule-row__header">
+                  <Form.Item name={[field.name, 'l3_channel_id']} className="l3-acceptance-rule-row__channel">
+                    <Select allowClear placeholder="選擇銷售通路" options={[...optionMap.values()]} disabled={isOrphan} optionFilterProp="label" showSearch />
                   </Form.Item>
-                ))}
+                  <div className="l3-acceptance-rule-row__actions">
+                    <Button type="text" htmlType="button" icon={<PlusOutlined />} onClick={() => add(createEmptyL3AcceptanceFormRow())} aria-label="新增銷售通路允收" />
+                    {index > 0 && <Button type="text" htmlType="button" icon={<MinusOutlined />} onClick={() => remove(field.name)} aria-label="刪除此列允收" />}
+                  </div>
+                </div>
+                <AcceptanceRuleFields title="國內商品" namePath={[field.name, 'acceptance_domestic']} watchPath={['l3_acceptance_rules', field.name, 'acceptance_domestic']} />
+                <AcceptanceRuleFields title="國外商品" namePath={[field.name, 'acceptance_foreign']} watchPath={['l3_acceptance_rules', field.name, 'acceptance_foreign']} />
               </div>
             );
-          }
-          return (
-            <Form.Item name={[prefix, 'flat_value']} className="acceptance-rule-fields__item">
-              <FlatDaysInput />
-            </Form.Item>
-          );
-        }}
-      </Form.Item>
+          }) : null
+        )}
+      </Form.List>
     </div>
   );
 }
@@ -948,11 +1067,15 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
   useEffect(() => {
     if (!open) return;
     if (editingHub) {
+      const boundChannels = l3Channels.filter((c) => c.l2_hub_id === editingHub.id);
+      const l3Rows = toL3AcceptanceFormRows(boundChannels);
       form.setFieldsValue({
         name: editingHub.name,
-        l3_channel_ids: l3Channels.filter((c) => c.l2_hub_id === editingHub.id).map((c) => c.id),
+        l3_channel_ids: boundChannels.map((c) => c.id),
         acceptance_domestic: toFormAcceptance(editingHub.acceptance_domestic),
         acceptance_foreign: toFormAcceptance(editingHub.acceptance_foreign),
+        enable_l3_acceptance: l3Rows.some((row) => Boolean(row.l3_channel_id)),
+        l3_acceptance_rules: l3Rows,
       });
     } else {
       form.resetFields();
@@ -960,6 +1083,8 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
         l3_channel_ids: [],
         acceptance_domestic: { ...EMPTY_ACCEPTANCE_FORM },
         acceptance_foreign: { ...EMPTY_ACCEPTANCE_FORM },
+        enable_l3_acceptance: false,
+        l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()],
       });
     }
   }, [open, editingHub, l3Channels, form]);
@@ -991,10 +1116,13 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
   return (
     <Drawer
       title={editingHub ? '編輯通路分組' : '新增通路分組'}
-      width={560} open={open} onClose={onClose} destroyOnClose
+      width={600} open={open} onClose={onClose} destroyOnClose
       footer={<Space style={{ float: 'right' }}><Button onClick={onClose}>取消</Button><Button type="primary" onClick={() => form.submit()}>儲存</Button></Space>}
     >
-      <Form form={form} layout="vertical" onFinish={handleFinish}>
+      <Form form={form} layout="vertical" onFinish={handleFinish} initialValues={{
+        enable_l3_acceptance: false,
+        l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()],
+      }}>
         <Form.Item name="name" label="通路分組名稱" rules={[
           { required: true, whitespace: true, message: '請輸入通路分組名稱' },
           { validator: async (_, v) => { if (v?.trim() && existingNames.some((n) => n === v.trim() && n !== editingHub?.name)) throw new Error('名稱不可與其他通路分組重複'); } },
@@ -1002,8 +1130,8 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
           <Input placeholder="例如：線上2C" maxLength={50} showCount />
         </Form.Item>
         <div className="l2-hub-form-drawer__section-title">允收天數</div>
-        <AcceptanceRuleFields title="國內商品" prefix="acceptance_domestic" />
-        <AcceptanceRuleFields title="國外商品" prefix="acceptance_foreign" />
+        <AcceptanceRuleFields title="國內商品" namePath={['acceptance_domestic']} />
+        <AcceptanceRuleFields title="國外商品" namePath={['acceptance_foreign']} />
         <Form.Item name="l3_channel_ids" label="銷售通路" rules={[
           { required: true, type: 'array', min: 1, message: '請至少選擇一個銷售通路' },
         ]}>
@@ -1013,6 +1141,7 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
             hubName={editingHub?.name ?? '此通路分組'}
           />
         </Form.Item>
+        <L3AcceptanceRuleList l3Channels={l3Channels} />
       </Form>
     </Drawer>
   );

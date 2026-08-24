@@ -8,7 +8,10 @@ export { toFormAcceptance } from '../../utils/acceptanceRule';
 
 interface AcceptanceRuleFieldsProps {
   title: string;
-  prefix: AcceptanceFieldPrefix;
+  /** Form.Item 欄位路徑（在 Form.List 內為相對路徑） */
+  namePath: Array<string | number>;
+  /** useWatch 用的完整路徑；未傳則與 namePath 相同 */
+  watchPath?: Array<string | number>;
 }
 
 const TIER_FIELDS = [
@@ -137,14 +140,18 @@ function FlatDaysInput({
 }
 
 /** 允收天數設定（國內 / 國外） */
-export function AcceptanceRuleFields({ title, prefix }: AcceptanceRuleFieldsProps) {
+export function AcceptanceRuleFields({ title, namePath, watchPath }: AcceptanceRuleFieldsProps) {
+  const form = Form.useFormInstance();
+  const valuePath = watchPath ?? namePath;
+  const useTierRatio = Form.useWatch([...valuePath, 'use_tier_ratio'], form);
+
   return (
     <div className="acceptance-rule-fields">
       <div className="acceptance-rule-fields__heading">{title}</div>
 
       <div className="acceptance-rule-fields__toggle-row">
         <span className="acceptance-rule-fields__toggle-label">是否啟用總效期分級比例</span>
-        <Form.Item name={[prefix, 'use_tier_ratio']} noStyle>
+        <Form.Item name={[...namePath, 'use_tier_ratio']} noStyle>
           <Radio.Group>
             <Radio value={true}>是</Radio>
             <Radio value={false}>否</Radio>
@@ -152,42 +159,27 @@ export function AcceptanceRuleFields({ title, prefix }: AcceptanceRuleFieldsProp
         </Form.Item>
       </div>
 
-      <Form.Item
-        noStyle
-        shouldUpdate={(prev, cur) =>
-          prev?.[prefix]?.use_tier_ratio !== cur?.[prefix]?.use_tier_ratio
-        }
-      >
-        {({ getFieldValue }) => {
-          const useTierRatio = getFieldValue([prefix, 'use_tier_ratio']);
-
-          if (useTierRatio) {
-            return (
-              <div className="acceptance-rule-fields__tier-group">
-                {TIER_FIELDS.map(({ name, label }) => (
-                  <Form.Item
-                    key={name}
-                    name={[prefix, name]}
-                    label={label}
-                    className="acceptance-rule-fields__item"
-                  >
-                    <RatioInput />
-                  </Form.Item>
-                ))}
-              </div>
-            );
-          }
-
-          return (
+      {useTierRatio ? (
+        <div className="acceptance-rule-fields__tier-group">
+          {TIER_FIELDS.map(({ name, label }) => (
             <Form.Item
-              name={[prefix, 'flat_value']}
+              key={name}
+              name={[...namePath, name]}
+              label={label}
               className="acceptance-rule-fields__item"
             >
-              <FlatDaysInput />
+              <RatioInput />
             </Form.Item>
-          );
-        }}
-      </Form.Item>
+          ))}
+        </div>
+      ) : (
+        <Form.Item
+          name={[...namePath, 'flat_value']}
+          className="acceptance-rule-fields__item"
+        >
+          <FlatDaysInput />
+        </Form.Item>
+      )}
     </div>
   );
 }
