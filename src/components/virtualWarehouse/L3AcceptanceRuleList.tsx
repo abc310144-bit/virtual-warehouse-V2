@@ -1,4 +1,4 @@
-import { Button, Form, Radio, Select } from 'antd';
+import { Button, Form, Modal, Radio, Select } from 'antd';
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import type { L3AcceptanceRuleFormRow, L3Channel } from '../../types/virtualWarehouse';
 import { createEmptyL3AcceptanceFormRow } from '../../types/virtualWarehouse';
@@ -35,6 +35,23 @@ export function L3AcceptanceRuleList({ l3Channels }: L3AcceptanceRuleListProps) 
     if (toRowArray(form.getFieldValue('l3_acceptance_rules')).length === 0) {
       form.setFieldsValue({ l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()] });
     }
+  };
+
+  const handleRemoveRow = (fieldName: number, totalCount: number, remove: (name: number) => void) => {
+    if (totalCount > 1) {
+      remove(fieldName);
+      return;
+    }
+
+    Modal.confirm({
+      title: '若刪除此設定，通路將無任何允收限制設定',
+      okText: '確定',
+      cancelText: '取消',
+      onOk: () => {
+        remove(fieldName);
+        form.setFieldsValue({ enable_l3_acceptance: false });
+      },
+    });
   };
 
   return (
@@ -98,15 +115,13 @@ export function L3AcceptanceRuleList({ l3Channels }: L3AcceptanceRuleListProps) 
                           onClick={() => add(createEmptyL3AcceptanceFormRow())}
                           aria-label="新增銷售通路允收"
                         />
-                        {index > 0 && (
-                          <Button
-                            type="text"
-                            htmlType="button"
-                            icon={<MinusOutlined />}
-                            onClick={() => remove(field.name)}
-                            aria-label="刪除此列允收"
-                          />
-                        )}
+                        <Button
+                          type="text"
+                          htmlType="button"
+                          icon={<MinusOutlined />}
+                          onClick={() => handleRemoveRow(field.name, fields.length, remove)}
+                          aria-label="刪除此列允收"
+                        />
                       </div>
                     </div>
 

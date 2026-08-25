@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, Modal, Select, Tooltip } from 'antd';
+import { Button, Checkbox, Form, Modal, Select, Tooltip } from 'antd';
 import { DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import {
   PARTNER_CHANNEL_CATALOG,
   getPartnerTypeByKey,
 } from '../../data/partnerChannelCatalog';
-import type { L3Channel } from '../../types/virtualWarehouse';
+import type { L3AcceptanceRuleFormRow, L3Channel } from '../../types/virtualWarehouse';
+import { createEmptyL3AcceptanceFormRow } from '../../types/virtualWarehouse';
 import './SalesChannelPicker.css';
 
 export interface SalesChannelPickerProps {
@@ -35,6 +36,19 @@ function setL3RemoveConfirmDismissedToday(): void {
   localStorage.setItem(L3_REMOVE_DISMISS_KEY, getTodayKey());
 }
 
+function toAcceptanceRowArray(
+  rows?: L3AcceptanceRuleFormRow[] | Record<string, L3AcceptanceRuleFormRow>,
+): L3AcceptanceRuleFormRow[] {
+  if (Array.isArray(rows)) return rows;
+  if (rows && typeof rows === 'object') {
+    return Object.keys(rows)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => (rows as Record<string, L3AcceptanceRuleFormRow>)[key])
+      .filter(Boolean);
+  }
+  return [];
+}
+
 function isChannelTakenByOtherHub(
   channel: L3Channel,
   editingHubId?: string | null,
@@ -60,7 +74,7 @@ function findPartnerTypeKeyByChannelName(channelName: string): string | undefine
   return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
 }
 
-function confirmRemoveBoundChannels(hubName: string): Promise<boolean> {
+function confirmRemoveSalesChannels(hubName: string): Promise<boolean> {
   if (isL3RemoveConfirmDismissedToday()) {
     return Promise.resolve(true);
   }
@@ -72,9 +86,8 @@ function confirmRemoveBoundChannels(hubName: string): Promise<boolean> {
       icon: <ExclamationCircleFilled />,
       content: (
         <div className="sales-channel-picker__remove-confirm">
-          <div>
-            {`刪除後，該銷售通路所有商品將自動配回「${hubName}」`}
-          </div>
+          <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
+          <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
           <Checkbox
             className="sales-channel-picker__remove-confirm-check"
             onChange={(event) => {
@@ -85,7 +98,7 @@ function confirmRemoveBoundChannels(hubName: string): Promise<boolean> {
           </Checkbox>
         </div>
       ),
-      okText: '確認刪除',
+      okText: '確定',
       okType: 'danger',
       cancelText: '取消',
       onOk: () => {
@@ -105,8 +118,8 @@ export function SalesChannelPicker({
   editingHubId,
   hubName = '此通路分組',
 }: SalesChannelPickerProps) {
+  const form = Form.useFormInstance();
   const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
-
   const availableChannels = useMemo(
     () =>
       l3Channels.filter(
@@ -186,19 +199,57 @@ export function SalesChannelPicker({
 
   const currentTypeSelectedCount = currentTypeChannelIds.filter((id) => value.includes(id)).length;
 
+  const syncAcceptanceRulesAfterRemove = (removedIds: string[]) => {
+    if (removedIds.length === 0) return;
+
+    const removedSet = new Set(removedIds);
+    const currentRules = toAcceptanceRowArray(form.getFieldValue('l3_acceptance_rules'));
+    const removedAnyConfigured = currentRules.some(
+      (row) => Boolean(row.l3_channel_id) && removedSet.has(row.l3_channel_id as string),
+    );
+    if (!removedAnyConfigured) return;
+
+    const nextRules = currentRules.filter(
+      (row) => !row.l3_channel_id || !removedSet.has(row.l3_channel_id),
+    );
+    const hasConfiguredRule = nextRules.some((row) => Boolean(row.l3_channel_id));
+
+    if (!hasConfiguredRule) {
+      form.setFieldsValue({
+        enable_l3_acceptance: false,
+        l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()],
+      });
+      return;
+    }
+
+    form.setFieldsValue({ l3_acceptance_rules: nextRules });
+  };
+
   const applyChange = async (nextIds: string[]) => {
     const removedIds = value.filter((id) => !nextIds.includes(id));
+    if (removedIds.length === 0) {
+      onChange?.(nextIds);
+      return;
+    }
+
     const removedBoundIds = removedIds.filter((id) => {
       const channel = idToChannel.get(id);
       return Boolean(editingHubId && channel?.l2_hub_id === editingHubId);
     });
 
-    if (removedBoundIds.length > 0) {
-      const confirmed = await confirmRemoveBoundChannels(hubName);
+    const enableL3Acceptance = form.getFieldValue('enable_l3_acceptance') === true;
+    const acceptanceRules = toAcceptanceRowArray(form.getFieldValue('l3_acceptance_rules'));
+    const removedWithAcceptanceIds = enableL3Acceptance
+      ? removedIds.filter((id) => acceptanceRules.some((row) => row.l3_channel_id === id))
+      : [];
+
+    if (removedBoundIds.length > 0 || removedWithAcceptanceIds.length > 0) {
+      const confirmed = await confirmRemoveSalesChannels(hubName);
       if (!confirmed) return;
     }
 
     onChange?.(nextIds);
+    syncAcceptanceRulesAfterRemove(removedIds);
   };
 
   const handleSelectAllForType = (typeKey: string) => {
