@@ -44,7 +44,7 @@ export function L3AcceptanceRuleList({ l3Channels }: L3AcceptanceRuleListProps) 
     }
 
     Modal.confirm({
-      title: '若刪除此設定，通路將無任何允收限制設定',
+      title: '若刪除此設定，銷售通路將無任何允收限制設定',
       okText: '確定',
       cancelText: '取消',
       onOk: () => {
