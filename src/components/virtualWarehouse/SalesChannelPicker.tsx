@@ -56,13 +56,6 @@ function isChannelTakenByOtherHub(
   return channel.l2_hub_id != null && channel.l2_hub_id !== editingHubId;
 }
 
-function buildOptionLabel(channel: L3Channel, editingHubId?: string | null): string {
-  if (isChannelTakenByOtherHub(channel, editingHubId)) {
-    return `${channel.name}（已歸屬其他通路分組）`;
-  }
-  return channel.name;
-}
-
 function isChannelSelectable(
   channel: L3Channel,
   editingHubId?: string | null,
@@ -174,23 +167,26 @@ export function SalesChannelPicker({
     [currentTypeChannelIds],
   );
 
-  /** 下拉只顯示／操作目前類型的通路 */
+  /** 下拉只顯示目前類型；已選／已被其他分組佔用者反灰 */
   const nameOptions = useMemo(() => {
     if (!currentType) return [];
     return currentType.channels
       .map((name) => nameToChannel.get(name))
       .filter((channel): channel is L3Channel => Boolean(channel))
-      .map((channel) => ({
-        value: channel.id,
-        label: buildOptionLabel(channel, editingHubId),
-        disabled: isChannelTakenByOtherHub(channel, editingHubId),
-      }));
-  }, [currentType, nameToChannel, editingHubId]);
-
-  const currentTypeSelectedIds = useMemo(
-    () => value.filter((id) => currentTypeChannelIdSet.has(id)),
-    [value, currentTypeChannelIdSet],
-  );
+      .map((channel) => {
+        const takenByOther = isChannelTakenByOtherHub(channel, editingHubId);
+        const alreadySelected = value.includes(channel.id);
+        return {
+          value: channel.id,
+          label: takenByOther
+            ? `${channel.name}（已歸屬其他通路分組）`
+            : alreadySelected
+              ? `${channel.name}（已選擇）`
+              : channel.name,
+          disabled: takenByOther || alreadySelected,
+        };
+      });
+  }, [currentType, nameToChannel, editingHubId, value]);
 
   const selectedChannels = useMemo(
     () =>
@@ -253,10 +249,10 @@ export function SalesChannelPicker({
     syncAcceptanceRulesAfterRemove(removedIds);
   };
 
-  /** 目前類型下拉變更：保留其他類型已選，只替換本類型選取 */
-  const handleCurrentTypeChange = (selectedInType: string[]) => {
-    const keptFromOtherTypes = value.filter((id) => !currentTypeChannelIdSet.has(id));
-    void applyChange([...keptFromOtherTypes, ...selectedInType]);
+  /** 從下拉新增一筆（已選項目在選單中反灰，不可再選） */
+  const handlePickChannel = (channelId: string | undefined) => {
+    if (!channelId || value.includes(channelId)) return;
+    void applyChange([...value, channelId]);
   };
 
   const handleSelectAllForType = () => {
@@ -267,7 +263,7 @@ export function SalesChannelPicker({
       .filter((channel) => isChannelSelectable(channel, editingHubId))
       .map((channel) => channel.id);
     const keptFromOtherTypes = value.filter((id) => !currentTypeChannelIdSet.has(id));
-    void applyChange([...keptFromOtherTypes, ...idsToAdd]);
+    void applyChange([...new Set([...keptFromOtherTypes, ...idsToAdd])]);
   };
 
   const handleRemoveSelected = (channelId: string) => {
@@ -304,18 +300,16 @@ export function SalesChannelPicker({
             </Button>
           </div>
           <Select
-            mode="multiple"
             allowClear
-            maxTagCount="responsive"
             className="sales-channel-picker__name-select"
             placeholder={
               nameOptions.length === 0
                 ? '此類型尚無通路'
-                : '選擇通路名稱（可複選；一個銷售通路僅能歸屬一個通路分組）'
+                : '請選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'
             }
-            value={currentTypeSelectedIds}
+            value={undefined}
             options={nameOptions}
-            onChange={handleCurrentTypeChange}
+            onChange={handlePickChannel}
             optionFilterProp="label"
             disabled={nameOptions.length === 0}
             showSearch
