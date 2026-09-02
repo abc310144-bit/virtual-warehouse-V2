@@ -14,12 +14,16 @@ import type {
   L3Channel,
   UpdateL2HubPayload,
 } from '../types/virtualWarehouse';
-import { L2HubErrorCode } from '../types/virtualWarehouse';
+import {
+  L2_UNGROUPED_HUB_ID,
+  L2_UNGROUPED_HUB_NAME,
+  L2HubErrorCode,
+} from '../types/virtualWarehouse';
 
 const L2_STORE_KEY = 'vw-mock-l2-hubs';
 const L3_STORE_KEY = 'vw-mock-l3-channels';
 const MOCK_STORE_VERSION_KEY = 'vw-mock-store-version';
-const MOCK_STORE_VERSION = '2026-08-24-l3-acceptance';
+const MOCK_STORE_VERSION = '2026-09-02-ungrouped-hub';
 
 function loadMockStore<T>(key: string, initial: T): T {
   if (typeof localStorage === 'undefined') return structuredClone(initial);
@@ -57,40 +61,96 @@ function toListItem(hub: L2Hub): L2HubListItem {
   return { ...hub, l3_channel_count: countL3ByHub(hub.id) };
 }
 
+function isUngroupedHub(hub: Pick<L2Hub, 'id' | 'is_ungrouped'> | undefined): boolean {
+  return Boolean(hub?.is_ungrouped || hub?.id === L2_UNGROUPED_HUB_ID);
+}
+
+function ensureUngroupedHub(): L2Hub {
+  const existing = l2HubsStore.find((hub) => isUngroupedHub(hub));
+  if (existing) {
+    if (!existing.is_ungrouped || existing.name !== L2_UNGROUPED_HUB_NAME) {
+      const fixed: L2Hub = {
+        ...existing,
+        id: L2_UNGROUPED_HUB_ID,
+        name: L2_UNGROUPED_HUB_NAME,
+        is_ungrouped: true,
+        acceptance_domestic: undefined,
+        acceptance_foreign: undefined,
+        status: 'active',
+      };
+      l2HubsStore = l2HubsStore.map((hub) => (hub.id === existing.id ? fixed : hub));
+      return fixed;
+    }
+    return existing;
+  }
+  const created: L2Hub = {
+    id: L2_UNGROUPED_HUB_ID,
+    name: L2_UNGROUPED_HUB_NAME,
+    is_ungrouped: true,
+    status: 'active',
+    created_at: '2026-01-01T00:00:00Z',
+  };
+  l2HubsStore = [...l2HubsStore, created];
+  return created;
+}
+
+/**
+ * 綁定／解除 L3：
+ * - 從一般 L2 移除 → 移入「未分組通路」
+ * - 從「未分組通路」移除 → 解除歸屬（null，可再加入其他 L2）
+ */
 function bindL3Channels(
   hubId: string,
   channelIds: string[],
   l3AcceptanceRules: L3AcceptanceRulePayload[] = [],
-): void {
+): { movedToUngroupedCount: number } {
+  const ungrouped = ensureUngroupedHub();
+  const editingUngrouped = hubId === ungrouped.id;
   const ruleByChannelId = new Map(
     l3AcceptanceRules.map((rule) => [rule.l3_channel_id, rule]),
   );
+  let movedToUngroupedCount = 0;
+
   l3ChannelsStore = l3ChannelsStore.map((channel) => {
     if (channelIds.includes(channel.id)) {
       const rule = ruleByChannelId.get(channel.id);
       return {
         ...channel,
         l2_hub_id: hubId,
-        acceptance_domestic: rule?.acceptance_domestic,
-        acceptance_foreign: rule?.acceptance_foreign,
+        acceptance_domestic: editingUngrouped ? undefined : rule?.acceptance_domestic,
+        acceptance_foreign: editingUngrouped ? undefined : rule?.acceptance_foreign,
       };
     }
     if (channel.l2_hub_id === hubId && !channelIds.includes(channel.id)) {
+      if (editingUngrouped) {
+        return {
+          ...channel,
+          l2_hub_id: null,
+          acceptance_domestic: undefined,
+          acceptance_foreign: undefined,
+        };
+      }
+      movedToUngroupedCount += 1;
       return {
         ...channel,
-        l2_hub_id: null,
+        l2_hub_id: ungrouped.id,
         acceptance_domestic: undefined,
         acceptance_foreign: undefined,
       };
     }
     return channel;
   });
+
+  return { movedToUngroupedCount };
 }
+
+ensureUngroupedHub();
 
 export const virtualWarehouseApi = {
   /** GET /api/virtual-warehouse/l2-hubs */
   async fetchL2Hubs(): Promise<L2HubListItem[]> {
     await delay();
+    ensureUngroupedHub();
     return l2HubsStore.map(toListItem);
   },
 
@@ -123,6 +183,15 @@ export const virtualWarehouseApi = {
   async createL2Hub(payload: CreateL2HubPayload): Promise<ApiResponse<L2HubListItem>> {
     await delay();
     const trimmed = payload.name.trim();
+    if (trimmed === L2_UNGROUPED_HUB_NAME) {
+      return {
+        success: false,
+        error: {
+          code: L2HubErrorCode.SYSTEM_HUB_PROTECTED,
+          message: '「未分組通路」為系統預設，不可新增同名分組',
+        },
+      };
+    }
     if (l2HubsStore.some((h) => h.name === trimmed)) {
       return {
         success: false,
@@ -144,7 +213,9 @@ export const virtualWarehouseApi = {
   },
 
   /** PUT /api/virtual-warehouse/l2-hubs/:id */
-  async updateL2Hub(payload: UpdateL2HubPayload): Promise<ApiResponse<L2HubListItem>> {
+  async updateL2Hub(
+    payload: UpdateL2HubPayload,
+  ): Promise<ApiResponse<L2HubListItem & { movedToUngroupedCount?: number }>> {
     await delay();
     const idx = l2HubsStore.findIndex((h) => h.id === payload.id);
     if (idx === -1) {
@@ -153,7 +224,18 @@ export const virtualWarehouseApi = {
         error: { code: L2HubErrorCode.NOT_FOUND, message: '找不到通路分組' },
       };
     }
-    const trimmed = payload.name.trim();
+    const current = l2HubsStore[idx];
+    const editingUngrouped = isUngroupedHub(current);
+    const trimmed = editingUngrouped ? L2_UNGROUPED_HUB_NAME : payload.name.trim();
+    if (!editingUngrouped && trimmed === L2_UNGROUPED_HUB_NAME) {
+      return {
+        success: false,
+        error: {
+          code: L2HubErrorCode.SYSTEM_HUB_PROTECTED,
+          message: '不可將通路分組改名為「未分組通路」',
+        },
+      };
+    }
     if (l2HubsStore.some((h) => h.name === trimmed && h.id !== payload.id)) {
       return {
         success: false,
@@ -161,22 +243,43 @@ export const virtualWarehouseApi = {
       };
     }
     const updated: L2Hub = {
-      ...l2HubsStore[idx],
+      ...current,
       name: trimmed,
-      acceptance_domestic: payload.acceptance_domestic,
-      acceptance_foreign: payload.acceptance_foreign,
-      status: payload.status ?? l2HubsStore[idx].status,
+      acceptance_domestic: editingUngrouped ? undefined : payload.acceptance_domestic,
+      acceptance_foreign: editingUngrouped ? undefined : payload.acceptance_foreign,
+      status: payload.status ?? current.status,
       updated_at: new Date().toISOString(),
+      is_ungrouped: editingUngrouped ? true : current.is_ungrouped,
     };
     l2HubsStore = l2HubsStore.map((h) => (h.id === payload.id ? updated : h));
-    bindL3Channels(payload.id, payload.l3_channel_ids ?? [], payload.l3_acceptance_rules ?? []);
+    const { movedToUngroupedCount } = bindL3Channels(
+      payload.id,
+      payload.l3_channel_ids ?? [],
+      editingUngrouped ? [] : payload.l3_acceptance_rules ?? [],
+    );
     persistMockStores();
-    return { success: true, data: toListItem(updated) };
+    return { success: true, data: { ...toListItem(updated), movedToUngroupedCount } };
   },
 
   /** DELETE /api/virtual-warehouse/l2-hubs/:id */
   async deleteL2Hub(id: string): Promise<ApiResponse<null>> {
     await delay();
+    const hub = l2HubsStore.find((h) => h.id === id);
+    if (!hub) {
+      return {
+        success: false,
+        error: { code: L2HubErrorCode.NOT_FOUND, message: '找不到通路分組' },
+      };
+    }
+    if (isUngroupedHub(hub)) {
+      return {
+        success: false,
+        error: {
+          code: L2HubErrorCode.SYSTEM_HUB_PROTECTED,
+          message: '「未分組通路」為系統預設，不可刪除',
+        },
+      };
+    }
     if (L2_HUBS_WITH_INVENTORY.has(id)) {
       return {
         success: false,
@@ -195,11 +298,12 @@ export const virtualWarehouseApi = {
         },
       };
     }
+    const ungrouped = ensureUngroupedHub();
     l3ChannelsStore = l3ChannelsStore.map((c) =>
       c.l2_hub_id === id
         ? {
             ...c,
-            l2_hub_id: null,
+            l2_hub_id: ungrouped.id,
             acceptance_domestic: undefined,
             acceptance_foreign: undefined,
           }
@@ -214,6 +318,7 @@ export const virtualWarehouseApi = {
   resetMockData(): void {
     l2HubsStore = structuredClone(INITIAL_L2_HUBS);
     l3ChannelsStore = structuredClone(INITIAL_L3_CHANNELS);
+    ensureUngroupedHub();
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(L2_STORE_KEY);
       localStorage.removeItem(L3_STORE_KEY);

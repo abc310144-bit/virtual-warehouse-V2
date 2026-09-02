@@ -9,7 +9,7 @@ import {
 } from 'antd';
 import type { FormInstance } from 'antd';
 import type { L2HubListItem, L3Channel, SaveL2HubFormValues } from '../../types/virtualWarehouse';
-import { EMPTY_ACCEPTANCE_FORM, createEmptyL3AcceptanceFormRow } from '../../types/virtualWarehouse';
+import { EMPTY_ACCEPTANCE_FORM, L2_UNGROUPED_HUB_NAME, createEmptyL3AcceptanceFormRow } from '../../types/virtualWarehouse';
 import { buildL3TransferConfirmContent } from '../../hooks/useL2HubManagement';
 import type { L3TransferConflict } from '../../types/virtualWarehouse';
 import { AcceptanceRuleFields, toFormAcceptance } from './AcceptanceRuleFields';
@@ -81,6 +81,7 @@ export function L2HubFormDrawer({
 }: L2HubFormDrawerProps) {
   const [form] = Form.useForm<SaveL2HubFormValues>();
   const isEditing = Boolean(editingHub);
+  const isUngroupedHub = Boolean(editingHub?.is_ungrouped);
 
   useEffect(() => {
     if (!open) return;
@@ -89,12 +90,16 @@ export function L2HubFormDrawer({
       const boundIds = boundChannels.map((c) => c.id);
       const l3Rows = toL3AcceptanceFormRows(boundChannels);
       form.setFieldsValue({
-        name: editingHub.name,
+        name: editingHub.is_ungrouped ? L2_UNGROUPED_HUB_NAME : editingHub.name,
         l3_channel_ids: boundIds,
         acceptance_domestic: toFormAcceptance(editingHub.acceptance_domestic),
         acceptance_foreign: toFormAcceptance(editingHub.acceptance_foreign),
-        enable_l3_acceptance: l3Rows.some((row) => Boolean(row.l3_channel_id)),
-        l3_acceptance_rules: l3Rows,
+        enable_l3_acceptance: editingHub.is_ungrouped
+          ? false
+          : l3Rows.some((row) => Boolean(row.l3_channel_id)),
+        l3_acceptance_rules: editingHub.is_ungrouped
+          ? [createEmptyL3AcceptanceFormRow()]
+          : l3Rows,
       });
     } else {
       form.resetFields();
@@ -109,14 +114,23 @@ export function L2HubFormDrawer({
   }, [open, editingHub, l3Channels, form]);
 
   const handleFinish = async (values: SaveL2HubFormValues) => {
-    const acceptanceConfirmed = await confirmMissingAcceptance(values);
-    if (!acceptanceConfirmed) return;
+    if (!isUngroupedHub) {
+      const acceptanceConfirmed = await confirmMissingAcceptance(values);
+      if (!acceptanceConfirmed) return;
+    }
 
     const l3Ids = values.l3_channel_ids ?? [];
     const conflicts = detectL3TransferConflicts(l3Ids, editingHub?.id);
     const confirmed = await confirmL3Transfers(conflicts);
     if (!confirmed) return;
-    await onSubmit(values);
+    await onSubmit({
+      ...values,
+      name: isUngroupedHub ? L2_UNGROUPED_HUB_NAME : values.name,
+      enable_l3_acceptance: isUngroupedHub ? false : values.enable_l3_acceptance,
+      l3_acceptance_rules: isUngroupedHub ? [] : values.l3_acceptance_rules,
+      acceptance_domestic: isUngroupedHub ? { ...EMPTY_ACCEPTANCE_FORM } : values.acceptance_domestic,
+      acceptance_foreign: isUngroupedHub ? { ...EMPTY_ACCEPTANCE_FORM } : values.acceptance_foreign,
+    });
   };
 
   return (
@@ -149,47 +163,73 @@ export function L2HubFormDrawer({
         <Form.Item
           name="name"
           label="通路分組名稱"
-          rules={[
-            { required: true, whitespace: true, message: '請輸入通路分組名稱' },
-            {
-              validator: async (_, value: string) => {
-                const trimmed = value?.trim();
-                if (!trimmed) return;
-                const duplicate = existingNames.some(
-                  (n) => n === trimmed && n !== editingHub?.name,
-                );
-                if (duplicate) throw new Error('名稱不可與其他通路分組重複');
-              },
-            },
-          ]}
+          rules={
+            isUngroupedHub
+              ? []
+              : [
+                  { required: true, whitespace: true, message: '請輸入通路分組名稱' },
+                  {
+                    validator: async (_, value: string) => {
+                      const trimmed = value?.trim();
+                      if (!trimmed) return;
+                      if (trimmed === L2_UNGROUPED_HUB_NAME) {
+                        throw new Error('不可使用系統預設名稱「未分組通路」');
+                      }
+                      const duplicate = existingNames.some(
+                        (n) => n === trimmed && n !== editingHub?.name,
+                      );
+                      if (duplicate) throw new Error('名稱不可與其他通路分組重複');
+                    },
+                  },
+                ]
+          }
         >
-          <Input placeholder="例如：線上2C" maxLength={50} showCount />
+          <Input
+            placeholder="例如：線上2C"
+            maxLength={50}
+            showCount={!isUngroupedHub}
+            disabled={isUngroupedHub}
+          />
         </Form.Item>
 
-        <div className="l2-hub-form-drawer__section-title">允收天數</div>
-        <AcceptanceRuleFields title="國內商品" namePath={['acceptance_domestic']} />
-        <AcceptanceRuleFields title="國外商品" namePath={['acceptance_foreign']} />
+        {!isUngroupedHub && (
+          <>
+            <div className="l2-hub-form-drawer__section-title">允收天數</div>
+            <AcceptanceRuleFields title="國內商品" namePath={['acceptance_domestic']} />
+            <AcceptanceRuleFields title="國外商品" namePath={['acceptance_foreign']} />
+          </>
+        )}
 
         <Form.Item
           name="l3_channel_ids"
           label="銷售通路"
-          rules={[
-            {
-              required: true,
-              type: 'array',
-              min: 1,
-              message: '請至少選擇一個銷售通路',
-            },
-          ]}
+          rules={
+            isUngroupedHub
+              ? []
+              : [
+                  {
+                    required: true,
+                    type: 'array',
+                    min: 1,
+                    message: '請至少選擇一個銷售通路',
+                  },
+                ]
+          }
+          extra={
+            isUngroupedHub
+              ? '從此處刪除銷售通路後，才可將其加入其他通路分組'
+              : undefined
+          }
         >
           <SalesChannelPicker
             l3Channels={l3Channels}
             editingHubId={editingHub?.id ?? null}
             hubName={editingHub?.name ?? '此通路分組'}
+            isUngroupedHub={isUngroupedHub}
           />
         </Form.Item>
 
-        <L3AcceptanceRuleList l3Channels={l3Channels} />
+        {!isUngroupedHub && <L3AcceptanceRuleList l3Channels={l3Channels} />}
       </Form>
     </Drawer>
   );

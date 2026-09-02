@@ -58,11 +58,12 @@ export function shouldShowL3SalesChannelFilter(
   return getBoundL3ByL2(filter.l2Id, l3Channels).length > 0;
 }
 
-/** 建構通路分組（L2）下拉選項 */
+/** 建構通路分組（L2）下拉選項；「未分組通路」固定置底 */
 export function buildL2GroupOptions(l2Hubs: L2Hub[]): L2DropdownOption[] {
-  return l2Hubs
-    .filter((h) => h.status === 'active')
-    .map((h) => ({ value: h.id, label: h.name }));
+  const active = l2Hubs.filter((h) => h.status === 'active');
+  const normal = active.filter((h) => !h.is_ungrouped);
+  const ungrouped = active.filter((h) => h.is_ungrouped);
+  return [...normal, ...ungrouped].map((h) => ({ value: h.id, label: h.name }));
 }
 
 /** 建構銷售通路（L3）下拉選項 */

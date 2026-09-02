@@ -50,9 +50,16 @@ export function L2HubManagementModal({
   };
 
   const handleDelete = (record: L2HubListItem) => {
+    if (record.is_ungrouped) {
+      Modal.warning({
+        title: '無法刪除',
+        content: '「未分組通路」為系統預設，不可刪除。若要將銷售通路改掛其他分組，請先從此分組刪除該通路。',
+      });
+      return;
+    }
     Modal.confirm({
       title: '確認刪除通路分組',
-      content: `確定要刪除「${record.name}」嗎？所屬銷售通路將解除綁定。並且釋放所有商品至總倉`,
+      content: `確定要刪除「${record.name}」嗎？所屬銷售通路將移至「未分組通路」。並且釋放所有商品至總倉`,
       okText: '確認刪除',
       okType: 'danger',
       cancelText: '取消',
@@ -74,12 +81,20 @@ export function L2HubManagementModal({
     }
   };
 
+  const sortedHubs = useMemo(() => {
+    const normal = l2Hubs.filter((hub) => !hub.is_ungrouped);
+    const ungrouped = l2Hubs.filter((hub) => hub.is_ungrouped);
+    return [...normal, ...ungrouped];
+  }, [l2Hubs]);
+
   const columns: ColumnsType<L2HubListItem> = [
     {
       title: '通路分組名稱',
       dataIndex: 'name',
       key: 'name',
       ellipsis: true,
+      render: (name: string, record) =>
+        record.is_ungrouped ? `${name}（系統）` : name,
     },
     {
       title: '銷售通路數',
@@ -93,14 +108,16 @@ export function L2HubManagementModal({
       key: 'acceptance_domestic',
       width: 140,
       ellipsis: true,
-      render: (_, record) => formatAcceptanceSummary(record.acceptance_domestic),
+      render: (_, record) =>
+        record.is_ungrouped ? '-' : formatAcceptanceSummary(record.acceptance_domestic),
     },
     {
       title: '允收（國外）',
       key: 'acceptance_foreign',
       width: 140,
       ellipsis: true,
-      render: (_, record) => formatAcceptanceSummary(record.acceptance_foreign),
+      render: (_, record) =>
+        record.is_ungrouped ? '-' : formatAcceptanceSummary(record.acceptance_foreign),
     },
     {
       title: '操作',
@@ -117,15 +134,17 @@ export function L2HubManagementModal({
           >
             編輯
           </Button>
-          <Button
-            type="link"
-            size="small"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => handleDelete(record)}
-          >
-            刪除
-          </Button>
+          {!record.is_ungrouped && (
+            <Button
+              type="link"
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => handleDelete(record)}
+            >
+              刪除
+            </Button>
+          )}
         </Space>
       ),
     },
@@ -151,7 +170,7 @@ export function L2HubManagementModal({
         <Table
           rowKey="id"
           columns={columns}
-          dataSource={l2Hubs}
+          dataSource={sortedHubs}
           loading={loading}
           pagination={false}
           size="small"

@@ -143,7 +143,7 @@ function toFormAcceptance(settings) {
 const L2_STORE_KEY = 'vw-mock-l2-hubs';
 const L3_STORE_KEY = 'vw-mock-l3-channels';
 const MOCK_STORE_VERSION_KEY = 'vw-mock-store-version';
-const MOCK_STORE_VERSION = '2026-08-24-l3-acceptance';
+const MOCK_STORE_VERSION = '2026-09-02-ungrouped-hub';
 
 function loadMockStore(key, initial) {
   try {
@@ -171,31 +171,77 @@ const delay = (ms = 200) => new Promise((r) => setTimeout(r, ms));
 
 function countL3(hubId) { return l3Store.filter((c) => c.l2_hub_id === hubId).length; }
 function toListItem(hub) { return { ...hub, l3_channel_count: countL3(hub.id) }; }
+function isUngroupedHub(hub) {
+  return Boolean(hub?.is_ungrouped || hub?.id === L2_UNGROUPED_HUB_ID);
+}
+function ensureUngroupedHub() {
+  const existing = l2Store.find((hub) => isUngroupedHub(hub));
+  if (existing) {
+    if (!existing.is_ungrouped || existing.name !== L2_UNGROUPED_HUB_NAME) {
+      const fixed = {
+        ...existing,
+        id: L2_UNGROUPED_HUB_ID,
+        name: L2_UNGROUPED_HUB_NAME,
+        is_ungrouped: true,
+        acceptance_domestic: undefined,
+        acceptance_foreign: undefined,
+        status: 'active',
+      };
+      l2Store = l2Store.map((hub) => (hub.id === existing.id ? fixed : hub));
+      return fixed;
+    }
+    return existing;
+  }
+  const created = {
+    id: L2_UNGROUPED_HUB_ID,
+    name: L2_UNGROUPED_HUB_NAME,
+    is_ungrouped: true,
+    status: 'active',
+    created_at: '2026-01-01T00:00:00Z',
+  };
+  l2Store = [...l2Store, created];
+  return created;
+}
 function bindL3(hubId, ids, l3AcceptanceRules = []) {
+  const ungrouped = ensureUngroupedHub();
+  const editingUngrouped = hubId === ungrouped.id;
   const ruleByChannelId = new Map((l3AcceptanceRules ?? []).map((rule) => [rule.l3_channel_id, rule]));
+  let movedToUngroupedCount = 0;
   l3Store = l3Store.map((c) => {
     if (ids.includes(c.id)) {
       const rule = ruleByChannelId.get(c.id);
       return {
         ...c,
         l2_hub_id: hubId,
-        acceptance_domestic: rule?.acceptance_domestic,
-        acceptance_foreign: rule?.acceptance_foreign,
+        acceptance_domestic: editingUngrouped ? undefined : rule?.acceptance_domestic,
+        acceptance_foreign: editingUngrouped ? undefined : rule?.acceptance_foreign,
       };
     }
     if (c.l2_hub_id === hubId && !ids.includes(c.id)) {
-      return { ...c, l2_hub_id: null, acceptance_domestic: undefined, acceptance_foreign: undefined };
+      if (editingUngrouped) {
+        return { ...c, l2_hub_id: null, acceptance_domestic: undefined, acceptance_foreign: undefined };
+      }
+      movedToUngroupedCount += 1;
+      return {
+        ...c,
+        l2_hub_id: ungrouped.id,
+        acceptance_domestic: undefined,
+        acceptance_foreign: undefined,
+      };
     }
     return c;
   });
+  return { movedToUngroupedCount };
 }
+ensureUngroupedHub();
 
 const api = {
-  fetchL2Hubs: async () => { await delay(); return l2Store.map(toListItem); },
+  fetchL2Hubs: async () => { await delay(); ensureUngroupedHub(); return l2Store.map(toListItem); },
   fetchL3Channels: async () => { await delay(); return JSON.parse(JSON.stringify(l3Store)); },
   createL2Hub: async (p) => {
     await delay();
     const name = p.name.trim();
+    if (name === L2_UNGROUPED_HUB_NAME) return { success: false, error: { message: '「未分組通路」為系統預設，不可新增同名分組' } };
     if (l2Store.some((h) => h.name === name)) return { success: false, error: { message: '通路分組名稱不可重複' } };
     const hub = {
       id: `l2-${Date.now()}`,
@@ -214,26 +260,40 @@ const api = {
     await delay();
     const idx = l2Store.findIndex((h) => h.id === p.id);
     if (idx === -1) return { success: false, error: { message: '找不到通路分組' } };
-    const name = p.name.trim();
+    const current = l2Store[idx];
+    const editingUngrouped = isUngroupedHub(current);
+    const name = editingUngrouped ? L2_UNGROUPED_HUB_NAME : p.name.trim();
+    if (!editingUngrouped && name === L2_UNGROUPED_HUB_NAME) {
+      return { success: false, error: { message: '不可將通路分組改名為「未分組通路」' } };
+    }
     if (l2Store.some((h) => h.name === name && h.id !== p.id)) return { success: false, error: { message: '通路分組名稱不可重複' } };
     l2Store[idx] = {
-      ...l2Store[idx],
+      ...current,
       name,
-      acceptance_domestic: normalizeAcceptanceSettings(p.acceptance_domestic),
-      acceptance_foreign: normalizeAcceptanceSettings(p.acceptance_foreign),
+      acceptance_domestic: editingUngrouped ? undefined : normalizeAcceptanceSettings(p.acceptance_domestic),
+      acceptance_foreign: editingUngrouped ? undefined : normalizeAcceptanceSettings(p.acceptance_foreign),
       status: p.status,
       updated_at: new Date().toISOString(),
+      is_ungrouped: editingUngrouped ? true : current.is_ungrouped,
     };
-    bindL3(p.id, p.l3_channel_ids ?? [], p.l3_acceptance_rules ?? []);
+    const { movedToUngroupedCount } = bindL3(
+      p.id,
+      p.l3_channel_ids ?? [],
+      editingUngrouped ? [] : (p.l3_acceptance_rules ?? []),
+    );
     persistMockStores();
-    return { success: true, data: toListItem(l2Store[idx]) };
+    return { success: true, data: { ...toListItem(l2Store[idx]), movedToUngroupedCount } };
   },
   deleteL2Hub: async (id) => {
     await delay();
+    const hub = l2Store.find((h) => h.id === id);
+    if (!hub) return { success: false, error: { message: '找不到通路分組' } };
+    if (isUngroupedHub(hub)) return { success: false, error: { message: '「未分組通路」為系統預設，不可刪除' } };
     if (L2_HAS_INVENTORY.has(id)) return { success: false, error: { message: '此通路分組尚有剩餘庫存，無法刪除' } };
     if (L2_HAS_ORDERS.has(id)) return { success: false, error: { message: '此通路分組尚有未完結訂單，無法刪除' } };
+    const ungrouped = ensureUngroupedHub();
     l3Store = l3Store.map((c) => (c.l2_hub_id === id
-      ? { ...c, l2_hub_id: null, acceptance_domestic: undefined, acceptance_foreign: undefined }
+      ? { ...c, l2_hub_id: ungrouped.id, acceptance_domestic: undefined, acceptance_foreign: undefined }
       : c));
     l2Store = l2Store.filter((h) => h.id !== id);
     persistMockStores();
@@ -255,7 +315,10 @@ function shouldShowL3SalesChannelFilter(filter, channels, l2Hubs = []) {
   return getBoundL3ByL2(filter.l2Id, channels).length > 0;
 }
 function buildL2GroupOptions(hubs) {
-  return hubs.filter((h) => h.status === 'active').map((h) => ({ value: h.id, label: h.name }));
+  const active = hubs.filter((h) => h.status === 'active');
+  const normal = active.filter((h) => !h.is_ungrouped);
+  const ungrouped = active.filter((h) => h.is_ungrouped);
+  return [...normal, ...ungrouped].map((h) => ({ value: h.id, label: h.name }));
 }
 function buildL3ChannelOptions(channels) {
   return channels.map((c) => ({ value: c.id, label: c.name }));
@@ -656,7 +719,12 @@ function useL2HubManagement() {
     };
     const res = editingId ? await api.updateL2Hub({ id: editingId, ...payload }) : await api.createL2Hub(payload);
     if (!res.success) { message.error(res.error.message); return false; }
-    message.success(editingId ? '通路分組已更新' : '通路分組已建立');
+    const movedCount = editingId ? Number(res.data?.movedToUngroupedCount ?? 0) : 0;
+    if (movedCount > 0) {
+      message.success('通路分組已更新；已移除的銷售通路已移至「未分組通路」，庫存已歸還原通路分組');
+    } else {
+      message.success(editingId ? '通路分組已更新' : '通路分組已建立');
+    }
     await refresh();
     return true;
   }, [refresh]);
@@ -931,7 +999,7 @@ function setL3RemoveConfirmDismissedToday() {
   localStorage.setItem(L3_REMOVE_DISMISS_KEY, getTodayKey());
 }
 
-function confirmRemoveSalesChannels(hubName) {
+function confirmRemoveSalesChannels(hubName, isUngroupedHub) {
   if (isL3RemoveConfirmDismissedToday()) return Promise.resolve(true);
   let dontRemindToday = false;
   return new Promise((resolve) => {
@@ -940,8 +1008,14 @@ function confirmRemoveSalesChannels(hubName) {
       icon: <ExclamationCircleFilled />,
       content: (
         <div className="sales-channel-picker__remove-confirm">
-          <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
-          <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
+          {isUngroupedHub ? (
+            <div>刪除後，該銷售通路將解除歸屬，之後可再加入其他通路分組</div>
+          ) : (
+            <>
+              <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
+              <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
+            </>
+          )}
           <Checkbox className="sales-channel-picker__remove-confirm-check"
             onChange={(event) => { dontRemindToday = event.target.checked; }}>
             今日不再提醒
@@ -960,7 +1034,7 @@ function confirmRemoveSalesChannels(hubName) {
   });
 }
 
-function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hubName = '此通路分組' }) {
+function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hubName = '此通路分組', isUngroupedHub = false }) {
   const form = Form.useFormInstance();
   const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
 
@@ -1060,7 +1134,7 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
       : [];
 
     if (removedBoundIds.length > 0 || removedWithAcceptanceIds.length > 0) {
-      const confirmed = await confirmRemoveSalesChannels(hubName);
+      const confirmed = await confirmRemoveSalesChannels(hubName, isUngroupedHub);
       if (!confirmed) return;
     }
 
@@ -1120,18 +1194,19 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
 
 function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose, onSubmit, detectConflicts }) {
   const [form] = Form.useForm();
+  const isUngroupedHub = Boolean(editingHub?.is_ungrouped);
   useEffect(() => {
     if (!open) return;
     if (editingHub) {
       const boundChannels = l3Channels.filter((c) => c.l2_hub_id === editingHub.id);
       const l3Rows = toL3AcceptanceFormRows(boundChannels);
       form.setFieldsValue({
-        name: editingHub.name,
+        name: editingHub.is_ungrouped ? L2_UNGROUPED_HUB_NAME : editingHub.name,
         l3_channel_ids: boundChannels.map((c) => c.id),
         acceptance_domestic: toFormAcceptance(editingHub.acceptance_domestic),
         acceptance_foreign: toFormAcceptance(editingHub.acceptance_foreign),
-        enable_l3_acceptance: l3Rows.some((row) => Boolean(row.l3_channel_id)),
-        l3_acceptance_rules: l3Rows,
+        enable_l3_acceptance: editingHub.is_ungrouped ? false : l3Rows.some((row) => Boolean(row.l3_channel_id)),
+        l3_acceptance_rules: editingHub.is_ungrouped ? [createEmptyL3AcceptanceFormRow()] : l3Rows,
       });
     } else {
       form.resetFields();
@@ -1146,8 +1221,10 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
   }, [open, editingHub, l3Channels, form]);
 
   const handleFinish = async (values) => {
-    const acceptanceConfirmed = await confirmMissingAcceptance(values);
-    if (!acceptanceConfirmed) return;
+    if (!isUngroupedHub) {
+      const acceptanceConfirmed = await confirmMissingAcceptance(values);
+      if (!acceptanceConfirmed) return;
+    }
 
     const conflicts = detectConflicts(values.l3_channel_ids ?? [], editingHub?.id);
     if (conflicts.length) {
@@ -1166,7 +1243,14 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
       });
       if (!ok) return;
     }
-    await onSubmit(values);
+    await onSubmit({
+      ...values,
+      name: isUngroupedHub ? L2_UNGROUPED_HUB_NAME : values.name,
+      enable_l3_acceptance: isUngroupedHub ? false : values.enable_l3_acceptance,
+      l3_acceptance_rules: isUngroupedHub ? [] : values.l3_acceptance_rules,
+      acceptance_domestic: isUngroupedHub ? { ...EMPTY_ACCEPTANCE_FORM } : values.acceptance_domestic,
+      acceptance_foreign: isUngroupedHub ? { ...EMPTY_ACCEPTANCE_FORM } : values.acceptance_foreign,
+    });
   };
 
   return (
@@ -1179,25 +1263,38 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
         enable_l3_acceptance: false,
         l3_acceptance_rules: [createEmptyL3AcceptanceFormRow()],
       }}>
-        <Form.Item name="name" label="通路分組名稱" rules={[
+        <Form.Item name="name" label="通路分組名稱" rules={isUngroupedHub ? [] : [
           { required: true, whitespace: true, message: '請輸入通路分組名稱' },
-          { validator: async (_, v) => { if (v?.trim() && existingNames.some((n) => n === v.trim() && n !== editingHub?.name)) throw new Error('名稱不可與其他通路分組重複'); } },
+          { validator: async (_, v) => {
+            const trimmed = v?.trim();
+            if (!trimmed) return;
+            if (trimmed === L2_UNGROUPED_HUB_NAME) throw new Error('不可使用系統預設名稱「未分組通路」');
+            if (existingNames.some((n) => n === trimmed && n !== editingHub?.name)) throw new Error('名稱不可與其他通路分組重複');
+          } },
         ]}>
-          <Input placeholder="例如：線上2C" maxLength={50} showCount />
+          <Input placeholder="例如：線上2C" maxLength={50} showCount={!isUngroupedHub} disabled={isUngroupedHub} />
         </Form.Item>
-        <div className="l2-hub-form-drawer__section-title">允收天數</div>
-        <AcceptanceRuleFields title="國內商品" namePath={['acceptance_domestic']} />
-        <AcceptanceRuleFields title="國外商品" namePath={['acceptance_foreign']} />
-        <Form.Item name="l3_channel_ids" label="銷售通路" rules={[
-          { required: true, type: 'array', min: 1, message: '請至少選擇一個銷售通路' },
-        ]}>
+        {!isUngroupedHub && (
+          <>
+            <div className="l2-hub-form-drawer__section-title">允收天數</div>
+            <AcceptanceRuleFields title="國內商品" namePath={['acceptance_domestic']} />
+            <AcceptanceRuleFields title="國外商品" namePath={['acceptance_foreign']} />
+          </>
+        )}
+        <Form.Item
+          name="l3_channel_ids"
+          label="銷售通路"
+          rules={isUngroupedHub ? [] : [{ required: true, type: 'array', min: 1, message: '請至少選擇一個銷售通路' }]}
+          extra={isUngroupedHub ? '從此處刪除銷售通路後，才可將其加入其他通路分組' : undefined}
+        >
           <SalesChannelPicker
             l3Channels={l3Channels}
             editingHubId={editingHub?.id ?? null}
             hubName={editingHub?.name ?? '此通路分組'}
+            isUngroupedHub={isUngroupedHub}
           />
         </Form.Item>
-        <L3AcceptanceRuleList l3Channels={l3Channels} />
+        {!isUngroupedHub && <L3AcceptanceRuleList l3Channels={l3Channels} />}
       </Form>
     </Drawer>
   );
@@ -1207,20 +1304,27 @@ function L2HubManagementModal({ open, l2Hubs, l3Channels, loading, onClose, onSa
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingHub, setEditingHub] = useState(null);
   const names = useMemo(() => l2Hubs.map((h) => h.name), [l2Hubs]);
+  const sortedHubs = useMemo(() => {
+    const normal = l2Hubs.filter((hub) => !hub.is_ungrouped);
+    const ungrouped = l2Hubs.filter((hub) => hub.is_ungrouped);
+    return [...normal, ...ungrouped];
+  }, [l2Hubs]);
 
   const columns = [
-    { title: '通路分組名稱', dataIndex: 'name', ellipsis: true },
+    { title: '通路分組名稱', dataIndex: 'name', ellipsis: true, render: (name, r) => (r.is_ungrouped ? `${name}（系統）` : name) },
     { title: '銷售通路數', dataIndex: 'l3_channel_count', width: 100, align: 'center' },
-    { title: '允收（國內）', key: 'acceptance_domestic', width: 140, ellipsis: true, render: (_, r) => formatAcceptanceSummary(r.acceptance_domestic) },
-    { title: '允收（國外）', key: 'acceptance_foreign', width: 140, ellipsis: true, render: (_, r) => formatAcceptanceSummary(r.acceptance_foreign) },
+    { title: '允收（國內）', key: 'acceptance_domestic', width: 140, ellipsis: true, render: (_, r) => (r.is_ungrouped ? '-' : formatAcceptanceSummary(r.acceptance_domestic)) },
+    { title: '允收（國外）', key: 'acceptance_foreign', width: 140, ellipsis: true, render: (_, r) => (r.is_ungrouped ? '-' : formatAcceptanceSummary(r.acceptance_foreign)) },
     { title: '操作', key: 'action', width: 120, align: 'center', render: (_, r) => (
       <Space size="small">
         <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditingHub(r); setDrawerOpen(true); }}>編輯</Button>
-        <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => {
-          Modal.confirm({ title: '確認刪除通路分組', content: `確定要刪除「${r.name}」嗎？所屬銷售通路將解除綁定。並且釋放所有商品至總倉`, okText: '確認刪除', okType: 'danger', cancelText: '取消',
-            onOk: async () => { const ok = await onDelete(r.id); if (ok && editingHub?.id === r.id) { setDrawerOpen(false); setEditingHub(null); } },
-          });
-        }}>刪除</Button>
+        {!r.is_ungrouped && (
+          <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => {
+            Modal.confirm({ title: '確認刪除通路分組', content: `確定要刪除「${r.name}」嗎？所屬銷售通路將移至「未分組通路」。並且釋放所有商品至總倉`, okText: '確認刪除', okType: 'danger', cancelText: '取消',
+              onOk: async () => { const ok = await onDelete(r.id); if (ok && editingHub?.id === r.id) { setDrawerOpen(false); setEditingHub(null); } },
+            });
+          }}>刪除</Button>
+        )}
       </Space>
     )},
   ];
@@ -1231,7 +1335,7 @@ function L2HubManagementModal({ open, l2Hubs, l3Channels, loading, onClose, onSa
         <div className="l2-hub-management-modal__toolbar">
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingHub(null); setDrawerOpen(true); }}>新增通路分組</Button>
         </div>
-        <Table rowKey="id" columns={columns} dataSource={l2Hubs} loading={loading} pagination={false} size="small" scroll={{ y: 400 }} />
+        <Table rowKey="id" columns={columns} dataSource={sortedHubs} loading={loading} pagination={false} size="small" scroll={{ y: 400 }} />
         <p className="l2-hub-management-modal__hint">總倉為實體庫存來源，不可在此編輯。一個銷售通路同一時間僅能歸屬一個通路分組。</p>
       </Modal>
       <L2HubFormDrawer open={drawerOpen} editingHub={editingHub} l3Channels={l3Channels} existingNames={names}

@@ -16,6 +16,8 @@ export interface SalesChannelPickerProps {
   editingHubId?: string | null;
   /** 配回目標名稱（通常為目前通路分組名稱） */
   hubName?: string;
+  /** 編輯系統預設「未分組通路」時：刪除後解除歸屬，不配回庫存 */
+  isUngroupedHub?: boolean;
 }
 
 const L3_REMOVE_DISMISS_KEY = 'vw-dismiss-l3-remove-confirm-date-v1';
@@ -74,7 +76,7 @@ function findPartnerTypeKeyByChannelName(channelName: string): string | undefine
   return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
 }
 
-function confirmRemoveSalesChannels(hubName: string): Promise<boolean> {
+function confirmRemoveSalesChannels(hubName: string, isUngroupedHub: boolean): Promise<boolean> {
   if (isL3RemoveConfirmDismissedToday()) {
     return Promise.resolve(true);
   }
@@ -86,8 +88,14 @@ function confirmRemoveSalesChannels(hubName: string): Promise<boolean> {
       icon: <ExclamationCircleFilled />,
       content: (
         <div className="sales-channel-picker__remove-confirm">
-          <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
-          <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
+          {isUngroupedHub ? (
+            <div>刪除後，該銷售通路將解除歸屬，之後可再加入其他通路分組</div>
+          ) : (
+            <>
+              <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
+              <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
+            </>
+          )}
           <Checkbox
             className="sales-channel-picker__remove-confirm-check"
             onChange={(event) => {
@@ -117,6 +125,7 @@ export function SalesChannelPicker({
   l3Channels,
   editingHubId,
   hubName = '此通路分組',
+  isUngroupedHub = false,
 }: SalesChannelPickerProps) {
   const form = Form.useFormInstance();
   const [partnerTypeKey, setPartnerTypeKey] = useState(PARTNER_CHANNEL_CATALOG[0]?.key ?? '');
@@ -244,7 +253,7 @@ export function SalesChannelPicker({
       : [];
 
     if (removedBoundIds.length > 0 || removedWithAcceptanceIds.length > 0) {
-      const confirmed = await confirmRemoveSalesChannels(hubName);
+      const confirmed = await confirmRemoveSalesChannels(hubName, isUngroupedHub);
       if (!confirmed) return;
     }
 
