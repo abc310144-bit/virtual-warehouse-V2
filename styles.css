@@ -678,23 +678,21 @@ body {
   gap: 6px;
 }
 
+.sales-channel-picker__field--expand {
+  padding-top: 4px;
+}
+
 .sales-channel-picker__label {
   color: rgba(0, 0, 0, 0.88);
   font-size: 14px;
 }
 
-.sales-channel-picker__name-header {
+.sales-channel-picker__name-header,
+.sales-channel-picker__selected-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-}
-
-.sales-channel-picker__name-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
 }
 
 .sales-channel-picker__select-all {
@@ -716,13 +714,40 @@ body {
   width: 100%;
 }
 
-.sales-channel-picker__summary {
-  color: rgba(0, 0, 0, 0.45);
-  font-size: 12px;
+.sales-channel-picker__selected {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
 }
 
-.sales-channel-picker__summary-sub {
+.sales-channel-picker__selected-count {
   margin-left: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 400;
+}
+
+.sales-channel-picker__selected-empty {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+}
+
+.sales-channel-picker__selected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sales-channel-picker__selected-tag {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: normal;
+  max-width: 100%;
 }
 
 .sales-channel-picker__remove-confirm {
