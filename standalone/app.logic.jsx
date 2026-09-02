@@ -6,7 +6,7 @@ const {
 const {
   UploadOutlined, DownloadOutlined, FilterOutlined, SettingOutlined,
   PlusOutlined, MinusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined, CaretDownFilled,
-  ExclamationCircleFilled, CloseOutlined,
+  ExclamationCircleFilled, CloseOutlined, CheckOutlined,
 } = icons;
 const { Header, Sider, Content } = Layout;
 const { RangePicker } = DatePicker;
@@ -998,6 +998,11 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
   }, [currentType, nameToChannel]);
   const currentTypeChannelIdSet = useMemo(() => new Set(currentTypeChannelIds), [currentTypeChannelIds]);
 
+  const currentTypeSelectedIds = useMemo(
+    () => value.filter((id) => currentTypeChannelIdSet.has(id)),
+    [value, currentTypeChannelIdSet],
+  );
+
   const nameOptions = useMemo(() => {
     if (!currentType) return [];
     return currentType.channels
@@ -1005,18 +1010,15 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
       .filter(Boolean)
       .map((channel) => {
         const takenByOther = isChannelTakenByOtherHub(channel, editingHubId);
-        const alreadySelected = value.includes(channel.id);
         return {
           value: channel.id,
           label: takenByOther
             ? `${channel.name}（已歸屬其他通路分組）`
-            : alreadySelected
-              ? `${channel.name}（已選擇）`
-              : channel.name,
-          disabled: takenByOther || alreadySelected,
+            : channel.name,
+          disabled: takenByOther,
         };
       });
-  }, [currentType, nameToChannel, editingHubId, value]);
+  }, [currentType, nameToChannel, editingHubId]);
 
   const selectedChannels = useMemo(
     () => value.map((id) => idToChannel.get(id)).filter(Boolean),
@@ -1068,9 +1070,9 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
     syncAcceptanceRulesAfterRemove(removedIds);
   };
 
-  const handlePickChannel = (channelId) => {
-    if (!channelId || value.includes(channelId)) return;
-    void applyChange([...value, channelId]);
+  const handleCurrentTypeChange = (selectedInType) => {
+    const keptFromOtherTypes = value.filter((id) => !currentTypeChannelIdSet.has(id));
+    void applyChange([...keptFromOtherTypes, ...selectedInType]);
   };
 
   const handleSelectAllForType = () => {
@@ -1106,10 +1108,13 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
               disabled={currentType.channels.length === 0 || nameOptions.length === 0}
               onClick={handleSelectAllForType}>全選</Button>
           </div>
-          <Select allowClear className="sales-channel-picker__name-select"
+          <Select mode="multiple" className="sales-channel-picker__name-select"
             placeholder={nameOptions.length === 0 ? '此類型尚無通路' : '請選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'}
-            value={undefined} options={nameOptions} onChange={handlePickChannel}
-            optionFilterProp="label" disabled={nameOptions.length === 0} showSearch />
+            value={currentTypeSelectedIds} options={nameOptions} onChange={handleCurrentTypeChange}
+            optionFilterProp="label" disabled={nameOptions.length === 0} showSearch
+            autoClearSearchValue={false} maxTagCount={0} maxTagPlaceholder={() => null}
+            menuItemSelectedIcon={<CheckOutlined />}
+            popupClassName="sales-channel-picker__name-dropdown" />
         </div>
       )}
       <div className="sales-channel-picker__selected">

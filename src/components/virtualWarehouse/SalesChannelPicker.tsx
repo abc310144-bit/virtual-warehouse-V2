@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Form, Modal, Select, Tag, Tooltip } from 'antd';
-import { CloseOutlined, DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
+import { CheckOutlined, CloseOutlined, DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import {
   PARTNER_CHANNEL_CATALOG,
   getPartnerTypeByKey,
@@ -103,7 +103,7 @@ function confirmRemoveSalesChannels(hubName: string): Promise<boolean> {
   });
 }
 
-/** 兩層銷售通路選擇：合作通路類型 → 通路名稱（複選）→ 已選擇清單 */
+/** 兩層銷售通路選擇：合作通路類型 → 通路名稱（打勾複選）→ 已選擇清單 */
 export function SalesChannelPicker({
   value = [],
   onChange,
@@ -167,7 +167,12 @@ export function SalesChannelPicker({
     [currentTypeChannelIds],
   );
 
-  /** 下拉只顯示目前類型；已選／已被其他分組佔用者反灰 */
+  const currentTypeSelectedIds = useMemo(
+    () => value.filter((id) => currentTypeChannelIdSet.has(id)),
+    [value, currentTypeChannelIdSet],
+  );
+
+  /** 下拉只顯示目前類型；已被其他分組佔用者反灰；已選以打勾顯示 */
   const nameOptions = useMemo(() => {
     if (!currentType) return [];
     return currentType.channels
@@ -175,18 +180,15 @@ export function SalesChannelPicker({
       .filter((channel): channel is L3Channel => Boolean(channel))
       .map((channel) => {
         const takenByOther = isChannelTakenByOtherHub(channel, editingHubId);
-        const alreadySelected = value.includes(channel.id);
         return {
           value: channel.id,
           label: takenByOther
             ? `${channel.name}（已歸屬其他通路分組）`
-            : alreadySelected
-              ? `${channel.name}（已選擇）`
-              : channel.name,
-          disabled: takenByOther || alreadySelected,
+            : channel.name,
+          disabled: takenByOther,
         };
       });
-  }, [currentType, nameToChannel, editingHubId, value]);
+  }, [currentType, nameToChannel, editingHubId]);
 
   const selectedChannels = useMemo(
     () =>
@@ -249,10 +251,10 @@ export function SalesChannelPicker({
     syncAcceptanceRulesAfterRemove(removedIds);
   };
 
-  /** 從下拉新增一筆（已選項目在選單中反灰，不可再選） */
-  const handlePickChannel = (channelId: string | undefined) => {
-    if (!channelId || value.includes(channelId)) return;
-    void applyChange([...value, channelId]);
+  /** 下拉打勾／取消打勾；選單保持開啟，點擊外部才收合 */
+  const handleCurrentTypeChange = (selectedInType: string[]) => {
+    const keptFromOtherTypes = value.filter((id) => !currentTypeChannelIdSet.has(id));
+    void applyChange([...keptFromOtherTypes, ...selectedInType]);
   };
 
   const handleSelectAllForType = () => {
@@ -300,19 +302,24 @@ export function SalesChannelPicker({
             </Button>
           </div>
           <Select
-            allowClear
+            mode="multiple"
             className="sales-channel-picker__name-select"
             placeholder={
               nameOptions.length === 0
                 ? '此類型尚無通路'
                 : '請選擇通路名稱（一個銷售通路僅能歸屬一個通路分組）'
             }
-            value={undefined}
+            value={currentTypeSelectedIds}
             options={nameOptions}
-            onChange={handlePickChannel}
+            onChange={handleCurrentTypeChange}
             optionFilterProp="label"
             disabled={nameOptions.length === 0}
             showSearch
+            autoClearSearchValue={false}
+            maxTagCount={0}
+            maxTagPlaceholder={() => null}
+            menuItemSelectedIcon={<CheckOutlined />}
+            popupClassName="sales-channel-picker__name-dropdown"
           />
         </div>
       )}

@@ -714,6 +714,24 @@ body {
   width: 100%;
 }
 
+/* 已選結果只顯示在下方「已選擇」，輸入框不出現 chip */
+.sales-channel-picker__name-select.ant-select-multiple .ant-select-selection-overflow-item:not(.ant-select-selection-overflow-item-suffix) {
+  display: none !important;
+}
+
+.sales-channel-picker__name-select.ant-select-multiple .ant-select-selection-search {
+  margin-inline-start: 0;
+}
+
+.sales-channel-picker__name-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  font-weight: 400;
+  background: #fff;
+}
+
+.sales-channel-picker__name-dropdown .ant-select-item-option-state {
+  color: #1677ff;
+}
+
 .sales-channel-picker__selected {
   display: flex;
   flex-direction: column;
