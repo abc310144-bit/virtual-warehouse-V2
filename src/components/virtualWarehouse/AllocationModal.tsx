@@ -4,7 +4,7 @@ import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
 import {
-  buildL2GroupOptions,
+  buildL2AllocationTargetOptions,
   buildL3ChannelOptions,
   getActiveL3ByL2,
   shouldShowL3SalesChannelFilter,
@@ -70,7 +70,7 @@ function AllocationLocationCell({
     [line.l2Id, line.l3Id],
   );
   const showL3 = shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
-  const l2Options = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2Options = useMemo(() => buildL2AllocationTargetOptions(l2Hubs), [l2Hubs]);
   const l3Options = useMemo(() => {
     if (!line.l2Id) return [];
     return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels));

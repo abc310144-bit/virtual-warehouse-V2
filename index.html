@@ -230,6 +230,15 @@ body {
   color: #40a9ff;
 }
 
+.warehouse-table .action-link--disabled {
+  color: rgba(0, 0, 0, 0.25);
+  cursor: not-allowed;
+}
+
+.warehouse-table .action-link--disabled:hover {
+  color: rgba(0, 0, 0, 0.25);
+}
+
 .expiry-batch-cell {
   display: inline-flex;
   align-items: center;
@@ -1391,6 +1400,15 @@ function buildL2GroupOptions(hubs) {
   const ungrouped = active.filter((h) => h.is_ungrouped);
   return [...normal, ...ungrouped].map((h) => ({ value: h.id, label: h.name }));
 }
+function buildL2AllocationTargetOptions(hubs) {
+  return hubs
+    .filter((h) => h.status === 'active' && !h.is_ungrouped)
+    .map((h) => ({ value: h.id, label: h.name }));
+}
+function isUngroupedHubFilter(filter, hubs) {
+  if (filter.viewMode !== 'channel' || !filter.l2Id) return false;
+  return Boolean(hubs.find((hub) => hub.id === filter.l2Id)?.is_ungrouped);
+}
 function buildL3ChannelOptions(channels) {
   return channels.map((c) => ({ value: c.id, label: c.name }));
 }
@@ -1450,7 +1468,7 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
     [filter, l2Hubs, l3Channels],
   );
-  const l2TargetOptions = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2TargetOptions = useMemo(() => buildL2AllocationTargetOptions(l2Hubs), [l2Hubs]);
   const targetFilter = useMemo(
     () => ({ viewMode: 'channel', l2Id: targetL2Id, l3Id: targetL3Id }),
     [targetL2Id, targetL3Id],
@@ -1583,7 +1601,7 @@ function AllocationLocationCell({ line, l2Hubs, l3Channels, onL2Change, onL3Chan
     [line.l2Id, line.l3Id],
   );
   const showL3 = shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
-  const l2Options = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2Options = useMemo(() => buildL2AllocationTargetOptions(l2Hubs), [l2Hubs]);
   const l3Options = useMemo(() => {
     if (!line.l2Id) return [];
     return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels));
@@ -2523,12 +2541,17 @@ function VirtualWarehousePage() {
   const { l2Hubs, l3Channels, loading, saveL2Hub, deleteL2Hub, detectConflicts } = useL2HubManagement();
   const { filter, l2Options, l3Options, handleViewModeChange, handleL2Change, handleL3Change, resetFilter } = useL2L3CascadeFilter(l2Hubs, l3Channels);
   const tableData = useMemo(() => filterWarehouseTableData(MOCK_TABLE, filter), [filter]);
+  const allocationDisabled = useMemo(() => isUngroupedHubFilter(filter, l2Hubs), [filter, l2Hubs]);
   const canExpandL3 = filter.viewMode === 'channel' && Boolean(filter.l2Id) && !filter.l3Id;
 
   useEffect(() => {
     setExpandedRowKeys([]);
     setSelectedRowKeys([]);
-  }, [filter.viewMode, filter.l2Id, filter.l3Id]);
+    if (allocationDisabled) {
+      setBulkAllocationOpen(false);
+      setAllocationProduct(null);
+    }
+  }, [filter.viewMode, filter.l2Id, filter.l3Id, allocationDisabled]);
 
   const selectedRows = useMemo(
     () => tableData.filter((row) => selectedRowKeys.includes(row.key)),
@@ -2590,10 +2613,16 @@ function VirtualWarehousePage() {
       },
       ...qtyColumns,
       { title: '', key: 'action', width: 64, align: 'center', render: (_, record) => (
-        <a className="action-link" onClick={() => setAllocationProduct(record)}>配貨</a>
+        allocationDisabled ? (
+          <Tooltip title="未分組通路不支援配貨">
+            <span className="action-link action-link--disabled">配貨</span>
+          </Tooltip>
+        ) : (
+          <a className="action-link" onClick={() => setAllocationProduct(record)}>配貨</a>
+        )
       ) },
     ];
-  }, [filter.viewMode]);
+  }, [filter.viewMode, allocationDisabled]);
 
   const handleExportCsv = () => {
     const result = exportWarehouseTableCsv({ rows: tableData, filter, l2Hubs, l3Channels });
@@ -2607,7 +2636,9 @@ function VirtualWarehousePage() {
   return (
     <div className="virtual-warehouse-page">
       <div className="page-actions">
-        <Button type="primary" icon={<UploadOutlined />}>匯入配貨單</Button>
+        <Tooltip title={allocationDisabled ? '未分組通路不支援配貨' : undefined}>
+          <Button type="primary" icon={<UploadOutlined />} disabled={allocationDisabled}>匯入配貨單</Button>
+        </Tooltip>
         <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCsv}>匯出</Button>
         <Button type="primary" icon={<SettingOutlined />} onClick={() => setSettingsOpen(true)}>通路分組設定</Button>
         <Button icon={<FilterOutlined />}>篩選</Button>
@@ -2634,7 +2665,9 @@ function VirtualWarehousePage() {
       </div>
       <div className="table-toolbar">
         <div className="table-toolbar-left">
-          <Button type="primary" disabled={selectedRowKeys.length === 0} onClick={() => setBulkAllocationOpen(true)}>批量配貨</Button>
+          <Tooltip title={allocationDisabled ? '未分組通路不支援配貨' : undefined}>
+            <Button type="primary" disabled={allocationDisabled || selectedRowKeys.length === 0} onClick={() => setBulkAllocationOpen(true)}>批量配貨</Button>
+          </Tooltip>
           <Button onClick={() => setSelectedRowKeys([])}>清除選擇</Button>
         </div>
         <div className="table-toolbar-right">總共 {tableData.length} 筆，每頁顯示<Select value={pageSize} onChange={setPageSize} className="page-size-select" options={[{ value: 20, label: '20' }, { value: 50, label: '50' }, { value: 100, label: '100' }]} />筆</div>

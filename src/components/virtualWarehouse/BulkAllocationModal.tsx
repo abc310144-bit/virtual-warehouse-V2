@@ -4,7 +4,7 @@ import { InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
 import {
-  buildL2GroupOptions,
+  buildL2AllocationTargetOptions,
   buildL3ChannelOptions,
   getActiveL3ByL2,
   shouldShowL3SalesChannelFilter,
@@ -70,7 +70,7 @@ export function BulkAllocationModal({
     [filter, l2Hubs, l3Channels],
   );
 
-  const l2TargetOptions = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2TargetOptions = useMemo(() => buildL2AllocationTargetOptions(l2Hubs), [l2Hubs]);
 
   const targetFilter = useMemo<HierarchyFilterState>(
     () => ({ viewMode: 'channel', l2Id: targetL2Id, l3Id: targetL3Id }),

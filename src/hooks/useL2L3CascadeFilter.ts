@@ -66,6 +66,22 @@ export function buildL2GroupOptions(l2Hubs: L2Hub[]): L2DropdownOption[] {
   return [...normal, ...ungrouped].map((h) => ({ value: h.id, label: h.name }));
 }
 
+/** 配貨目標用 L2 選項：排除「未分組通路」（不可配貨至該分組） */
+export function buildL2AllocationTargetOptions(l2Hubs: L2Hub[]): L2DropdownOption[] {
+  return l2Hubs
+    .filter((h) => h.status === 'active' && !h.is_ungrouped)
+    .map((h) => ({ value: h.id, label: h.name }));
+}
+
+/** 目前篩選是否落在「未分組通路」（該檢視不支援配貨） */
+export function isUngroupedHubFilter(
+  filter: HierarchyFilterState,
+  l2Hubs: Array<{ id: string; is_ungrouped?: boolean }>,
+): boolean {
+  if (filter.viewMode !== 'channel' || !filter.l2Id) return false;
+  return Boolean(l2Hubs.find((hub) => hub.id === filter.l2Id)?.is_ungrouped);
+}
+
 /** 建構銷售通路（L3）下拉選項 */
 export function buildL3ChannelOptions(channels: L3Channel[]): L3DropdownOption[] {
   return channels.map((c) => ({ value: c.id, label: c.name }));
