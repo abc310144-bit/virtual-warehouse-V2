@@ -236,7 +236,9 @@ export function BulkAllocationModal({
         <span className="bulk-allocation-modal__location-label">配貨位置</span>
         <div className="bulk-allocation-modal__location-fields">
           <div className="bulk-allocation-modal__location-field">
-            <span className="bulk-allocation-modal__field-label">通路分組</span>
+            <span className="bulk-allocation-modal__field-label bulk-allocation-modal__field-label--required">
+              通路分組
+            </span>
             <Select
               className="bulk-allocation-modal__location-select"
               value={targetL2Id ?? undefined}
@@ -248,7 +250,10 @@ export function BulkAllocationModal({
           </div>
           {showTargetL3Dropdown && (
             <div className="bulk-allocation-modal__location-field">
-              <span className="bulk-allocation-modal__field-label">銷售通路</span>
+              <span className="bulk-allocation-modal__field-label">
+                銷售通路
+                <span className="bulk-allocation-modal__field-optional">（非必填）</span>
+              </span>
               <Select
                 className="bulk-allocation-modal__location-select"
                 value={targetL3Id ?? undefined}

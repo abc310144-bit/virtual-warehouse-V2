@@ -30,6 +30,22 @@
   font-size: 14px;
 }
 
+.bulk-allocation-modal__field-label--required::before {
+  display: inline-block;
+  margin-inline-end: 4px;
+  color: #ff4d4f;
+  font-size: 14px;
+  font-family: SimSun, sans-serif;
+  line-height: 1;
+  content: '*';
+}
+
+.bulk-allocation-modal__field-optional {
+  margin-left: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 400;
+}
+
 .bulk-allocation-modal__section-title {
   margin-bottom: 8px;
   color: rgba(0, 0, 0, 0.85);

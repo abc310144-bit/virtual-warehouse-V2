@@ -542,6 +542,22 @@ body {
   font-size: 14px;
 }
 
+.bulk-allocation-modal__field-label--required::before {
+  display: inline-block;
+  margin-inline-end: 4px;
+  color: #ff4d4f;
+  font-size: 14px;
+  font-family: SimSun, sans-serif;
+  line-height: 1;
+  content: '*';
+}
+
+.bulk-allocation-modal__field-optional {
+  margin-left: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 400;
+}
+
 .bulk-allocation-modal__section-title {
   margin-bottom: 8px;
   color: rgba(0, 0, 0, 0.85);
@@ -608,6 +624,34 @@ body {
   flex-direction: column;
   gap: 8px;
   min-width: 180px;
+}
+
+.allocation-modal__location-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.allocation-modal__field-label {
+  color: rgba(0, 0, 0, 0.85);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.allocation-modal__field-label--required::before {
+  display: inline-block;
+  margin-inline-end: 4px;
+  color: #ff4d4f;
+  font-size: 14px;
+  font-family: SimSun, sans-serif;
+  line-height: 1;
+  content: '*';
+}
+
+.allocation-modal__field-optional {
+  margin-left: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: 400;
 }
 
 .allocation-modal__location-cell .ant-select {
@@ -1431,13 +1475,13 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
         <span className="bulk-allocation-modal__location-label">配貨位置</span>
         <div className="bulk-allocation-modal__location-fields">
           <div className="bulk-allocation-modal__location-field">
-            <span className="bulk-allocation-modal__field-label">通路分組</span>
+            <span className="bulk-allocation-modal__field-label bulk-allocation-modal__field-label--required">通路分組</span>
             <Select className="bulk-allocation-modal__location-select" value={targetL2Id ?? undefined}
               options={l2TargetOptions} onChange={handleTargetL2Change} placeholder="請選擇通路分組" allowClear />
           </div>
           {showTargetL3Dropdown && (
             <div className="bulk-allocation-modal__location-field">
-              <span className="bulk-allocation-modal__field-label">銷售通路</span>
+              <span className="bulk-allocation-modal__field-label">銷售通路<span className="bulk-allocation-modal__field-optional">（非必填）</span></span>
               <Select className="bulk-allocation-modal__location-select" value={targetL3Id ?? undefined}
                 options={l3TargetOptions} onChange={setTargetL3Id} placeholder="請選擇銷售通路" allowClear />
             </div>
@@ -1474,11 +1518,17 @@ function AllocationLocationCell({ line, l2Hubs, l3Channels, onL2Change, onL3Chan
 
   return (
     <div className="allocation-modal__location-cell">
-      <Select value={line.l2Id ?? undefined} options={l2Options} onChange={onL2Change}
-        placeholder="請選擇通路分組" allowClear />
+      <div className="allocation-modal__location-field">
+        <span className="allocation-modal__field-label allocation-modal__field-label--required">通路分組</span>
+        <Select value={line.l2Id ?? undefined} options={l2Options} onChange={onL2Change}
+          placeholder="請選擇通路分組" allowClear />
+      </div>
       {showL3 && (
-        <Select value={line.l3Id ?? undefined} options={l3Options} onChange={onL3Change}
-          placeholder="請選擇銷售通路" allowClear />
+        <div className="allocation-modal__location-field">
+          <span className="allocation-modal__field-label">銷售通路<span className="allocation-modal__field-optional">（非必填）</span></span>
+          <Select value={line.l3Id ?? undefined} options={l3Options} onChange={onL3Change}
+            placeholder="請選擇銷售通路" allowClear />
+        </div>
       )}
     </div>
   );

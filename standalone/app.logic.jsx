@@ -414,13 +414,13 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
         <span className="bulk-allocation-modal__location-label">配貨位置</span>
         <div className="bulk-allocation-modal__location-fields">
           <div className="bulk-allocation-modal__location-field">
-            <span className="bulk-allocation-modal__field-label">通路分組</span>
+            <span className="bulk-allocation-modal__field-label bulk-allocation-modal__field-label--required">通路分組</span>
             <Select className="bulk-allocation-modal__location-select" value={targetL2Id ?? undefined}
               options={l2TargetOptions} onChange={handleTargetL2Change} placeholder="請選擇通路分組" allowClear />
           </div>
           {showTargetL3Dropdown && (
             <div className="bulk-allocation-modal__location-field">
-              <span className="bulk-allocation-modal__field-label">銷售通路</span>
+              <span className="bulk-allocation-modal__field-label">銷售通路<span className="bulk-allocation-modal__field-optional">（非必填）</span></span>
               <Select className="bulk-allocation-modal__location-select" value={targetL3Id ?? undefined}
                 options={l3TargetOptions} onChange={setTargetL3Id} placeholder="請選擇銷售通路" allowClear />
             </div>
@@ -457,11 +457,17 @@ function AllocationLocationCell({ line, l2Hubs, l3Channels, onL2Change, onL3Chan
 
   return (
     <div className="allocation-modal__location-cell">
-      <Select value={line.l2Id ?? undefined} options={l2Options} onChange={onL2Change}
-        placeholder="請選擇通路分組" allowClear />
+      <div className="allocation-modal__location-field">
+        <span className="allocation-modal__field-label allocation-modal__field-label--required">通路分組</span>
+        <Select value={line.l2Id ?? undefined} options={l2Options} onChange={onL2Change}
+          placeholder="請選擇通路分組" allowClear />
+      </div>
       {showL3 && (
-        <Select value={line.l3Id ?? undefined} options={l3Options} onChange={onL3Change}
-          placeholder="請選擇銷售通路" allowClear />
+        <div className="allocation-modal__location-field">
+          <span className="allocation-modal__field-label">銷售通路<span className="allocation-modal__field-optional">（非必填）</span></span>
+          <Select value={line.l3Id ?? undefined} options={l3Options} onChange={onL3Change}
+            placeholder="請選擇銷售通路" allowClear />
+        </div>
       )}
     </div>
   );

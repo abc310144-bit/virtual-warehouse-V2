@@ -78,21 +78,32 @@ function AllocationLocationCell({
 
   return (
     <div className="allocation-modal__location-cell">
-      <Select
-        value={line.l2Id ?? undefined}
-        options={l2Options}
-        onChange={onL2Change}
-        placeholder="請選擇通路分組"
-        allowClear
-      />
-      {showL3 && (
+      <div className="allocation-modal__location-field">
+        <span className="allocation-modal__field-label allocation-modal__field-label--required">
+          通路分組
+        </span>
         <Select
-          value={line.l3Id ?? undefined}
-          options={l3Options}
-          onChange={onL3Change}
-          placeholder="請選擇銷售通路"
+          value={line.l2Id ?? undefined}
+          options={l2Options}
+          onChange={onL2Change}
+          placeholder="請選擇通路分組"
           allowClear
         />
+      </div>
+      {showL3 && (
+        <div className="allocation-modal__location-field">
+          <span className="allocation-modal__field-label">
+            銷售通路
+            <span className="allocation-modal__field-optional">（非必填）</span>
+          </span>
+          <Select
+            value={line.l3Id ?? undefined}
+            options={l3Options}
+            onChange={onL3Change}
+            placeholder="請選擇銷售通路"
+            allowClear
+          />
+        </div>
       )}
     </div>
   );
