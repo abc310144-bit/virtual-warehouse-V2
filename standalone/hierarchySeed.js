@@ -1,7 +1,4 @@
 /** standalone 用 L2/L3 種子資料（與 src/data/hierarchySeed.ts 同步） */
-const L2_UNGROUPED_HUB_ID = 'l2-ungrouped';
-const L2_UNGROUPED_HUB_NAME = '未分組通路';
-
 const TIER_STANDARD = {
   use_tier_ratio: true,
   tier_31_90: '2/3',
@@ -86,13 +83,6 @@ function buildHierarchyFromSeed() {
       });
     });
   });
-  l2Hubs.push({
-    id: L2_UNGROUPED_HUB_ID,
-    name: L2_UNGROUPED_HUB_NAME,
-    is_ungrouped: true,
-    status: 'active',
-    created_at: '2026-01-01T00:00:00Z',
-  });
   const existingNames = new Set(l3Channels.map((channel) => channel.name));
   let catalogIndex = l3Channels.length;
   getAllCatalogChannelNames().forEach((name) => {
@@ -101,7 +91,7 @@ function buildHierarchyFromSeed() {
     l3Channels.push({
       id: `l3-cat-${String(catalogIndex).padStart(4, '0')}`,
       name,
-      l2_hub_id: L2_UNGROUPED_HUB_ID,
+      l2_hub_id: null,
       status: 'active',
     });
   });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, DatePicker, Input, Select, Table, Tooltip, message } from 'antd';
+import { Button, DatePicker, Input, Select, Table, message } from 'antd';
 import {
   CaretDownFilled,
   DownloadOutlined,
@@ -11,7 +11,7 @@ import { AllocationModal } from '../components/virtualWarehouse/AllocationModal'
 import { BulkAllocationModal } from '../components/virtualWarehouse/BulkAllocationModal';
 import { HierarchyFilterPanel } from '../components/virtualWarehouse/HierarchyFilterPanel';
 import { L2HubManagementModal } from '../components/virtualWarehouse/L2HubManagementModal';
-import { isUngroupedHubFilter, useL2L3CascadeFilter } from '../hooks/useL2L3CascadeFilter';
+import { useL2L3CascadeFilter } from '../hooks/useL2L3CascadeFilter';
 import { useL2HubManagement } from '../hooks/useL2HubManagement';
 import { exportWarehouseTableCsv } from '../utils/exportWarehouseTableCsv';
 import { filterWarehouseTableData } from '../utils/filterWarehouseTableData';
@@ -79,22 +79,13 @@ function VirtualWarehousePage() {
     [filter],
   );
 
-  const allocationDisabled = useMemo(
-    () => isUngroupedHubFilter(filter, l2Hubs),
-    [filter, l2Hubs],
-  );
-
   const canExpandL3 =
     filter.viewMode === 'channel' && Boolean(filter.l2Id) && !filter.l3Id;
 
   useEffect(() => {
     setExpandedRowKeys([]);
     setSelectedRowKeys([]);
-    if (allocationDisabled) {
-      setBulkAllocationOpen(false);
-      setAllocationProduct(null);
-    }
-  }, [filter.viewMode, filter.l2Id, filter.l3Id, allocationDisabled]);
+  }, [filter.viewMode, filter.l2Id, filter.l3Id]);
 
   const selectedRows = useMemo(
     () => tableData.filter((row) => selectedRowKeys.includes(row.key)),
@@ -198,28 +189,21 @@ function VirtualWarehousePage() {
         key: 'action',
         width: 64,
         align: 'center',
-        render: (_, record) =>
-          allocationDisabled ? (
-            <Tooltip title="未分組通路不支援配貨">
-              <span className="action-link action-link--disabled">配貨</span>
-            </Tooltip>
-          ) : (
-            <a className="action-link" onClick={() => setAllocationProduct(record)}>
-              配貨
-            </a>
-          ),
+        render: (_, record) => (
+          <a className="action-link" onClick={() => setAllocationProduct(record)}>
+            配貨
+          </a>
+        ),
       },
     ];
-  }, [filter.viewMode, allocationDisabled]);
+  }, [filter.viewMode]);
 
   return (
     <div className="virtual-warehouse-page">
       <div className="page-actions">
-        <Tooltip title={allocationDisabled ? '未分組通路不支援配貨' : undefined}>
-          <Button type="primary" icon={<UploadOutlined />} disabled={allocationDisabled}>
-            匯入配貨單
-          </Button>
-        </Tooltip>
+        <Button type="primary" icon={<UploadOutlined />}>
+          匯入配貨單
+        </Button>
         <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCsv}>
           匯出
         </Button>
@@ -294,15 +278,13 @@ function VirtualWarehousePage() {
 
       <div className="table-toolbar">
         <div className="table-toolbar-left">
-          <Tooltip title={allocationDisabled ? '未分組通路不支援配貨' : undefined}>
-            <Button
-              type="primary"
-              disabled={allocationDisabled || selectedRowKeys.length === 0}
-              onClick={() => setBulkAllocationOpen(true)}
-            >
-              批量配貨
-            </Button>
-          </Tooltip>
+          <Button
+            type="primary"
+            disabled={selectedRowKeys.length === 0}
+            onClick={() => setBulkAllocationOpen(true)}
+          >
+            批量配貨
+          </Button>
           <Button onClick={() => setSelectedRowKeys([])}>清除選擇</Button>
         </div>
         <div className="table-toolbar-right">

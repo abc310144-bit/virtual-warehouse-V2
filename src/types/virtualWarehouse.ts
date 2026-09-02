@@ -1,10 +1,6 @@
 /** L1 總倉固定 ID（實體庫存來源，不可修改） */
 export const L1_MAIN_WAREHOUSE_ID = 'L1_MAIN' as const;
 
-/** 系統預設 L2：收納被剔除的銷售通路 */
-export const L2_UNGROUPED_HUB_ID = 'l2-ungrouped' as const;
-export const L2_UNGROUPED_HUB_NAME = '未分組通路' as const;
-
 /** 篩選「全部」哨兵值 */
 export const FILTER_ALL = 'ALL' as const;
 
@@ -40,8 +36,6 @@ export interface AcceptanceRuleFormValues {
 export interface L2Hub {
   id: string;
   name: string;
-  /** 系統預設「未分組通路」：不可改名、不可刪除分組 */
-  is_ungrouped?: boolean;
   acceptance_domestic?: AcceptanceRuleSettings;
   acceptance_foreign?: AcceptanceRuleSettings;
   status: EntityStatus;
@@ -123,7 +117,6 @@ export enum L2HubErrorCode {
   HAS_INVENTORY = 'L2_HUB_HAS_INVENTORY',
   HAS_PENDING_ORDERS = 'L2_HUB_HAS_PENDING_ORDERS',
   NOT_FOUND = 'L2_HUB_NOT_FOUND',
-  SYSTEM_HUB_PROTECTED = 'L2_HUB_SYSTEM_PROTECTED',
 }
 
 export interface L3TransferConflict {

@@ -3,7 +3,6 @@
  */
 
 import type { AcceptanceRuleSettings } from '../types/virtualWarehouse';
-import { L2_UNGROUPED_HUB_ID, L2_UNGROUPED_HUB_NAME } from '../types/virtualWarehouse';
 import { getAllCatalogChannelNames } from './partnerChannelCatalog';
 
 export interface L2SeedGroup {
@@ -168,7 +167,6 @@ export function buildHierarchyFromSeed() {
   const l2Hubs: Array<{
     id: string;
     name: string;
-    is_ungrouped?: boolean;
     acceptance_domestic?: AcceptanceRuleSettings;
     acceptance_foreign?: AcceptanceRuleSettings;
     status: 'active' | 'inactive';
@@ -201,14 +199,6 @@ export function buildHierarchyFromSeed() {
     });
   });
 
-  l2Hubs.push({
-    id: L2_UNGROUPED_HUB_ID,
-    name: L2_UNGROUPED_HUB_NAME,
-    is_ungrouped: true,
-    status: 'active',
-    created_at: '2026-01-01T00:00:00Z',
-  });
-
   const existingNames = new Set(l3Channels.map((channel) => channel.name));
   let catalogIndex = l3Channels.length;
   getAllCatalogChannelNames().forEach((name) => {
@@ -217,7 +207,7 @@ export function buildHierarchyFromSeed() {
     l3Channels.push({
       id: `l3-cat-${String(catalogIndex).padStart(4, '0')}`,
       name,
-      l2_hub_id: L2_UNGROUPED_HUB_ID,
+      l2_hub_id: null,
       status: 'active',
     });
   });

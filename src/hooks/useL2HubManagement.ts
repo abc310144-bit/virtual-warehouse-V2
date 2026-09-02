@@ -32,7 +32,6 @@ const ERROR_MESSAGES: Record<L2HubErrorCode, string> = {
   [L2HubErrorCode.HAS_INVENTORY]: '此通路分組尚有剩餘庫存，無法刪除',
   [L2HubErrorCode.HAS_PENDING_ORDERS]: '此通路分組尚有未完結訂單，無法刪除',
   [L2HubErrorCode.NOT_FOUND]: '找不到通路分組',
-  [L2HubErrorCode.SYSTEM_HUB_PROTECTED]: '系統預設通路分組受保護，無法執行此操作',
 };
 
 export function useL2HubManagement(): UseL2HubManagementReturn {
@@ -111,17 +110,7 @@ export function useL2HubManagement(): UseL2HubManagementReturn {
         return false;
       }
 
-      const movedCount =
-        editingId && result.data && 'movedToUngroupedCount' in result.data
-          ? Number(result.data.movedToUngroupedCount ?? 0)
-          : 0;
-      if (movedCount > 0) {
-        message.success(
-          `通路分組已更新；已移除的銷售通路已移至「未分組通路」，庫存已歸還原通路分組`,
-        );
-      } else {
-        message.success(editingId ? '通路分組已更新' : '通路分組已建立');
-      }
+      message.success(editingId ? '通路分組已更新' : '通路分組已建立');
       await refresh();
       return true;
     },
