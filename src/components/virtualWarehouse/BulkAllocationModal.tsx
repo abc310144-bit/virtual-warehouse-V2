@@ -140,9 +140,9 @@ export function BulkAllocationModal({
   };
 
   const columns: ColumnsType<WarehouseProductRow> = [
-    { title: 'SKU', dataIndex: 'sku', width: 130 },
-    { title: '商品名稱', dataIndex: 'productName', ellipsis: true },
-    { title: '效期_批號', dataIndex: 'expiryBatch', width: 130 },
+    { title: 'SKU', dataIndex: 'sku', width: 140 },
+    { title: '商品名稱', dataIndex: 'productName', width: 220, ellipsis: true },
+    { title: '效期_批號', dataIndex: 'expiryBatch', width: 140 },
     {
       title: '來源通路',
       width: 120,
@@ -187,7 +187,7 @@ export function BulkAllocationModal({
           tip="配貨至目標通路分組前，該商品於目標位置的可分配數量"
         />
       ),
-      width: 130,
+      width: 140,
       align: 'center',
       render: () => 0,
     },
@@ -198,7 +198,7 @@ export function BulkAllocationModal({
           tip="配貨完成後，該商品於目標位置的可分配數量"
         />
       ),
-      width: 130,
+      width: 140,
       align: 'center',
       render: (_, row) => quantities[row.key] ?? 0,
     },
@@ -274,7 +274,7 @@ export function BulkAllocationModal({
         dataSource={selectedRows}
         pagination={false}
         size="small"
-        scroll={{ x: 1120 }}
+        scroll={{ x: 1390 }}
       />
     </Modal>
   );
