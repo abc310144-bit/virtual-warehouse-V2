@@ -185,7 +185,6 @@ export function L2HubFormDrawer({
           <SalesChannelPicker
             l3Channels={l3Channels}
             editingHubId={editingHub?.id ?? null}
-            hubName={editingHub?.name ?? '此通路分組'}
           />
         </Form.Item>
 

@@ -29,7 +29,7 @@ interface UseL2HubManagementReturn {
 
 const ERROR_MESSAGES: Record<L2HubErrorCode, string> = {
   [L2HubErrorCode.DUPLICATE_NAME]: '通路分組名稱不可重複',
-  [L2HubErrorCode.HAS_INVENTORY]: '此通路分組尚有剩餘庫存，無法刪除',
+  [L2HubErrorCode.HAS_INVENTORY]: '需先將所有商品配回至總倉',
   [L2HubErrorCode.HAS_PENDING_ORDERS]: '此通路分組尚有未完結訂單，無法刪除',
   [L2HubErrorCode.NOT_FOUND]: '找不到通路分組',
 };

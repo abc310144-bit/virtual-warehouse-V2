@@ -4,7 +4,12 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { L2HubListItem, L3Channel, SaveL2HubFormValues } from '../../types/virtualWarehouse';
 import { L2HubFormDrawer } from './L2HubFormDrawer';
+import { l2HubHasPendingOrders } from '../../api/mockVirtualWarehouseData';
 import { formatAcceptanceSummary } from '../../utils/acceptanceRule';
+import {
+  hasL2RemainingProducts,
+  warnMustReturnStockBeforeDelete,
+} from '../../utils/remainingWarehouseStock';
 import './L2HubManagementModal.css';
 
 export interface L2HubManagementModalProps {
@@ -50,20 +55,24 @@ export function L2HubManagementModal({
   };
 
   const handleDelete = (record: L2HubListItem) => {
-    Modal.confirm({
-      title: '確認刪除通路分組',
-      content: `確定要刪除「${record.name}」嗎？所屬銷售通路將解除綁定。並且釋放所有商品至總倉`,
-      okText: '確認刪除',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: async () => {
-        const ok = await onDelete(record.id);
-        if (ok && editingHub?.id === record.id) {
-          setFormDrawerOpen(false);
-          setEditingHub(null);
-        }
-      },
-    });
+    if (hasL2RemainingProducts(record.id)) {
+      warnMustReturnStockBeforeDelete('l2');
+      return;
+    }
+    if (l2HubHasPendingOrders(record.id)) {
+      Modal.warning({
+        title: '此通路分組尚有未完結訂單，無法刪除',
+        okText: '確定',
+      });
+      return;
+    }
+    void (async () => {
+      const ok = await onDelete(record.id);
+      if (ok && editingHub?.id === record.id) {
+        setFormDrawerOpen(false);
+        setEditingHub(null);
+      }
+    })();
   };
 
   const handleFormSubmit = async (values: SaveL2HubFormValues) => {

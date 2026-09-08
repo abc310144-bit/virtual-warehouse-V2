@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, Form, Modal, Select, Tag, Tooltip } from 'antd';
-import { CheckOutlined, CloseOutlined, DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
+import { Button, Form, Select, Tag, Tooltip } from 'antd';
+import { CheckOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import {
   PARTNER_CHANNEL_CATALOG,
   getPartnerTypeByKey,
 } from '../../data/partnerChannelCatalog';
 import type { L3AcceptanceRuleFormRow, L3Channel } from '../../types/virtualWarehouse';
 import { createEmptyL3AcceptanceFormRow } from '../../types/virtualWarehouse';
+import {
+  hasAnyL3RemainingProducts,
+  warnMustReturnStockBeforeDelete,
+} from '../../utils/remainingWarehouseStock';
 import './SalesChannelPicker.css';
 
 export interface SalesChannelPickerProps {
@@ -14,26 +18,6 @@ export interface SalesChannelPickerProps {
   onChange?: (value: string[]) => void;
   l3Channels: L3Channel[];
   editingHubId?: string | null;
-  /** 配回目標名稱（通常為目前通路分組名稱） */
-  hubName?: string;
-}
-
-const L3_REMOVE_DISMISS_KEY = 'vw-dismiss-l3-remove-confirm-date-v1';
-
-function getTodayKey(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-function isL3RemoveConfirmDismissedToday(): boolean {
-  if (typeof localStorage === 'undefined') return false;
-  return localStorage.getItem(L3_REMOVE_DISMISS_KEY) === getTodayKey();
-}
-
-function setL3RemoveConfirmDismissedToday(): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(L3_REMOVE_DISMISS_KEY, getTodayKey());
 }
 
 function toAcceptanceRowArray(
@@ -67,49 +51,12 @@ function findPartnerTypeKeyByChannelName(channelName: string): string | undefine
   return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
 }
 
-function confirmRemoveSalesChannels(hubName: string): Promise<boolean> {
-  if (isL3RemoveConfirmDismissedToday()) {
-    return Promise.resolve(true);
-  }
-
-  let dontRemindToday = false;
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: '確認刪除銷售通路',
-      icon: <ExclamationCircleFilled />,
-      content: (
-        <div className="sales-channel-picker__remove-confirm">
-          <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
-          <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
-          <Checkbox
-            className="sales-channel-picker__remove-confirm-check"
-            onChange={(event) => {
-              dontRemindToday = event.target.checked;
-            }}
-          >
-            今日不再提醒
-          </Checkbox>
-        </div>
-      ),
-      okText: '確定',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: () => {
-        if (dontRemindToday) setL3RemoveConfirmDismissedToday();
-        resolve(true);
-      },
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
 /** 兩層銷售通路選擇：合作通路類型 → 通路名稱（打勾複選）→ 已選擇清單 */
 export function SalesChannelPicker({
   value = [],
   onChange,
   l3Channels,
   editingHubId,
-  hubName = '此通路分組',
 }: SalesChannelPickerProps) {
   const form = Form.useFormInstance();
   const [partnerTypeKey, setPartnerTypeKey] = useState<string | undefined>(undefined);
@@ -236,15 +183,9 @@ export function SalesChannelPicker({
       return Boolean(editingHubId && channel?.l2_hub_id === editingHubId);
     });
 
-    const enableL3Acceptance = form.getFieldValue('enable_l3_acceptance') === true;
-    const acceptanceRules = toAcceptanceRowArray(form.getFieldValue('l3_acceptance_rules'));
-    const removedWithAcceptanceIds = enableL3Acceptance
-      ? removedIds.filter((id) => acceptanceRules.some((row) => row.l3_channel_id === id))
-      : [];
-
-    if (removedBoundIds.length > 0 || removedWithAcceptanceIds.length > 0) {
-      const confirmed = await confirmRemoveSalesChannels(hubName);
-      if (!confirmed) return;
+    if (removedBoundIds.length > 0 && hasAnyL3RemainingProducts(removedBoundIds)) {
+      warnMustReturnStockBeforeDelete('l3');
+      return;
     }
 
     onChange?.(nextIds);

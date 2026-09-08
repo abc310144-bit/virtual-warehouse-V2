@@ -1,9 +1,9 @@
 import {
   INITIAL_L2_HUBS,
   INITIAL_L3_CHANNELS,
-  L2_HUBS_WITH_INVENTORY,
-  L2_HUBS_WITH_PENDING_ORDERS,
+  l2HubHasPendingOrders,
 } from './mockVirtualWarehouseData';
+import { hasL2RemainingProducts } from '../utils/remainingWarehouseStock';
 import type {
   ApiResponse,
   CreateL2HubPayload,
@@ -177,16 +177,16 @@ export const virtualWarehouseApi = {
   /** DELETE /api/virtual-warehouse/l2-hubs/:id */
   async deleteL2Hub(id: string): Promise<ApiResponse<null>> {
     await delay();
-    if (L2_HUBS_WITH_INVENTORY.has(id)) {
+    if (hasL2RemainingProducts(id)) {
       return {
         success: false,
         error: {
           code: L2HubErrorCode.HAS_INVENTORY,
-          message: '此通路分組尚有剩餘庫存，無法刪除',
+          message: '需先將所有商品配回至總倉',
         },
       };
     }
-    if (L2_HUBS_WITH_PENDING_ORDERS.has(id)) {
+    if (l2HubHasPendingOrders(id)) {
       return {
         success: false,
         error: {
