@@ -99,5 +99,4 @@ function buildHierarchyFromSeed() {
 }
 
 const { l2Hubs: INITIAL_L2_HUBS, l3Channels: INITIAL_L3_CHANNELS } = buildHierarchyFromSeed();
-const L2_HAS_INVENTORY = new Set(['l2-001', 'l2-004']);
 const L2_HAS_ORDERS = new Set(['l2-002', 'l2-005']);

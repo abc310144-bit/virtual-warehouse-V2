@@ -1,12 +1,12 @@
 const { useState, useEffect, useMemo, useCallback } = React;
 const {
   Layout, Menu, Button, DatePicker, Input, InputNumber, Select, Table, ConfigProvider,
-  Modal, Drawer, Form, Space, Switch, message, Radio, Tooltip, Checkbox, Tag,
+  Modal, Drawer, Form, Space, Switch, message, Radio, Tooltip, Tag,
 } = antd;
 const {
   UploadOutlined, DownloadOutlined, FilterOutlined, SettingOutlined,
   PlusOutlined, MinusOutlined, EditOutlined, DeleteOutlined, InfoCircleOutlined, CaretDownFilled,
-  ExclamationCircleFilled, CloseOutlined, CheckOutlined,
+  CloseOutlined, CheckOutlined,
 } = icons;
 const { Header, Sider, Content } = Layout;
 const { RangePicker } = DatePicker;
@@ -190,6 +190,24 @@ function bindL3(hubId, ids, l3AcceptanceRules = []) {
   });
 }
 
+function rowHasStock(row) {
+  return (row.actualQty ?? 0) > 0 || (row.allocatableQty ?? 0) > 0;
+}
+function hasL2RemainingProducts(l2Id, rows = WAREHOUSE_PRODUCT_MOCK) {
+  return rows.some((row) => row.l2Id === l2Id && rowHasStock(row));
+}
+function hasAnyL3RemainingProducts(l3Ids, rows = WAREHOUSE_PRODUCT_MOCK) {
+  return l3Ids.some((id) => rows.some((row) => row.l3Id === id && rowHasStock(row)));
+}
+function warnMustReturnStockBeforeDelete(scope) {
+  Modal.warning({
+    title: scope === 'l2'
+      ? '需先將所有商品配回至總倉'
+      : '需先將所有商品配回至總倉或所屬通路分組',
+    okText: '確定',
+  });
+}
+
 const api = {
   fetchL2Hubs: async () => { await delay(); return l2Store.map(toListItem); },
   fetchL3Channels: async () => { await delay(); return JSON.parse(JSON.stringify(l3Store)); },
@@ -230,7 +248,7 @@ const api = {
   },
   deleteL2Hub: async (id) => {
     await delay();
-    if (L2_HAS_INVENTORY.has(id)) return { success: false, error: { message: '此通路分組尚有剩餘庫存，無法刪除' } };
+    if (hasL2RemainingProducts(id)) return { success: false, error: { message: '需先將所有商品配回至總倉' } };
     if (L2_HAS_ORDERS.has(id)) return { success: false, error: { message: '此通路分組尚有未完結訂單，無法刪除' } };
     l3Store = l3Store.map((c) => (c.l2_hub_id === id
       ? { ...c, l2_hub_id: null, acceptance_domestic: undefined, acceptance_foreign: undefined }
@@ -913,54 +931,7 @@ function findPartnerTypeKeyByChannelName(channelName) {
   return PARTNER_CHANNEL_CATALOG.find((type) => type.channels.includes(channelName))?.key;
 }
 
-const L3_REMOVE_DISMISS_KEY = 'vw-dismiss-l3-remove-confirm-date-v1';
-
-function getTodayKey() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-function isL3RemoveConfirmDismissedToday() {
-  if (typeof localStorage === 'undefined') return false;
-  return localStorage.getItem(L3_REMOVE_DISMISS_KEY) === getTodayKey();
-}
-
-function setL3RemoveConfirmDismissedToday() {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(L3_REMOVE_DISMISS_KEY, getTodayKey());
-}
-
-function confirmRemoveSalesChannels(hubName) {
-  if (isL3RemoveConfirmDismissedToday()) return Promise.resolve(true);
-  let dontRemindToday = false;
-  return new Promise((resolve) => {
-    Modal.confirm({
-      title: '確認刪除銷售通路',
-      icon: <ExclamationCircleFilled />,
-      content: (
-        <div className="sales-channel-picker__remove-confirm">
-          <div>刪除銷售通路，將自動刪除該銷售通路的允收限制設定</div>
-          <div>{`且，該銷售通路所有商品將自動配回「${hubName}」`}</div>
-          <Checkbox className="sales-channel-picker__remove-confirm-check"
-            onChange={(event) => { dontRemindToday = event.target.checked; }}>
-            今日不再提醒
-          </Checkbox>
-        </div>
-      ),
-      okText: '確定',
-      okType: 'danger',
-      cancelText: '取消',
-      onOk: () => {
-        if (dontRemindToday) setL3RemoveConfirmDismissedToday();
-        resolve(true);
-      },
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
-function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hubName = '此通路分組' }) {
+function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId }) {
   const form = Form.useFormInstance();
   const [partnerTypeKey, setPartnerTypeKey] = useState(undefined);
 
@@ -1055,15 +1026,10 @@ function SalesChannelPicker({ value = [], onChange, l3Channels, editingHubId, hu
       const channel = idToChannel.get(id);
       return Boolean(editingHubId && channel?.l2_hub_id === editingHubId);
     });
-    const enableL3Acceptance = form.getFieldValue('enable_l3_acceptance') === true;
-    const acceptanceRules = toL3RowArray(form.getFieldValue('l3_acceptance_rules'));
-    const removedWithAcceptanceIds = enableL3Acceptance
-      ? removedIds.filter((id) => acceptanceRules.some((row) => row.l3_channel_id === id))
-      : [];
 
-    if (removedBoundIds.length > 0 || removedWithAcceptanceIds.length > 0) {
-      const confirmed = await confirmRemoveSalesChannels(hubName);
-      if (!confirmed) return;
+    if (removedBoundIds.length > 0 && hasAnyL3RemainingProducts(removedBoundIds)) {
+      warnMustReturnStockBeforeDelete('l3');
+      return;
     }
 
     onChange?.(nextIds);
@@ -1225,7 +1191,6 @@ function L2HubFormDrawer({ open, editingHub, l3Channels, existingNames, onClose,
           <SalesChannelPicker
             l3Channels={l3Channels}
             editingHubId={editingHub?.id ?? null}
-            hubName={editingHub?.name ?? '此通路分組'}
           />
         </Form.Item>
         <L3AcceptanceRuleList l3Channels={l3Channels} />
@@ -1248,9 +1213,18 @@ function L2HubManagementModal({ open, l2Hubs, l3Channels, loading, onClose, onSa
       <Space size="small">
         <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditingHub(r); setDrawerOpen(true); }}>編輯</Button>
         <Button type="link" size="small" danger icon={<DeleteOutlined />} onClick={() => {
-          Modal.confirm({ title: '確認刪除通路分組', content: `確定要刪除「${r.name}」嗎？所屬銷售通路將解除綁定。並且釋放所有商品至總倉`, okText: '確認刪除', okType: 'danger', cancelText: '取消',
-            onOk: async () => { const ok = await onDelete(r.id); if (ok && editingHub?.id === r.id) { setDrawerOpen(false); setEditingHub(null); } },
-          });
+          if (hasL2RemainingProducts(r.id)) {
+            warnMustReturnStockBeforeDelete('l2');
+            return;
+          }
+          if (L2_HAS_ORDERS.has(r.id)) {
+            Modal.warning({ title: '此通路分組尚有未完結訂單，無法刪除', okText: '確定' });
+            return;
+          }
+          void (async () => {
+            const ok = await onDelete(r.id);
+            if (ok && editingHub?.id === r.id) { setDrawerOpen(false); setEditingHub(null); }
+          })();
         }}>刪除</Button>
       </Space>
     )},
