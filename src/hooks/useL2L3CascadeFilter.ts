@@ -65,6 +65,22 @@ export function buildL2GroupOptions(l2Hubs: L2Hub[]): L2DropdownOption[] {
     .map((h) => ({ value: h.id, label: h.name }));
 }
 
+/** 來源已在通路分組時，配貨不可平移到其他分組 */
+export function getAllocationSourceL2Id(filter: HierarchyFilterState): string | null {
+  if (filter.viewMode !== 'channel' || !filter.l2Id) return null;
+  return filter.l2Id;
+}
+
+/** 配貨目標通路分組：總倉可選全部；已在某分組則只能選該分組 */
+export function buildAllocatableL2Options(
+  l2Hubs: L2Hub[],
+  sourceL2Id: string | null,
+): L2DropdownOption[] {
+  const all = buildL2GroupOptions(l2Hubs);
+  if (!sourceL2Id) return all;
+  return all.filter((option) => option.value === sourceL2Id);
+}
+
 /** 建構銷售通路（L3）下拉選項 */
 export function buildL3ChannelOptions(channels: L3Channel[]): L3DropdownOption[] {
   return channels.map((c) => ({ value: c.id, label: c.name }));

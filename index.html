@@ -1368,6 +1368,15 @@ function shouldShowL3SalesChannelFilter(filter, channels, l2Hubs = []) {
 function buildL2GroupOptions(hubs) {
   return hubs.filter((h) => h.status === 'active').map((h) => ({ value: h.id, label: h.name }));
 }
+function getAllocationSourceL2Id(filter) {
+  if (filter.viewMode !== 'channel' || !filter.l2Id) return null;
+  return filter.l2Id;
+}
+function buildAllocatableL2Options(hubs, sourceL2Id) {
+  const all = buildL2GroupOptions(hubs);
+  if (!sourceL2Id) return all;
+  return all.filter((option) => option.value === sourceL2Id);
+}
 function buildL3ChannelOptions(channels) {
   return channels.map((c) => ({ value: c.id, label: c.name }));
 }
@@ -1427,7 +1436,8 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
     [filter, l2Hubs, l3Channels],
   );
-  const l2TargetOptions = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const sourceL2Id = useMemo(() => getAllocationSourceL2Id(filter), [filter]);
+  const l2TargetOptions = useMemo(() => buildAllocatableL2Options(l2Hubs, sourceL2Id), [l2Hubs, sourceL2Id]);
   const targetFilter = useMemo(
     () => ({ viewMode: 'channel', l2Id: targetL2Id, l3Id: targetL3Id }),
     [targetL2Id, targetL3Id],
@@ -1444,11 +1454,11 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
 
   useEffect(() => {
     if (!open) return;
-    setTargetL2Id(null);
+    setTargetL2Id(sourceL2Id);
     setTargetL3Id(null);
     setQuantities({});
     setRemarks({});
-  }, [open]);
+  }, [open, sourceL2Id]);
 
   useEffect(() => {
     if (!targetL2Id) {
@@ -1527,7 +1537,7 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
           <div className="bulk-allocation-modal__location-field">
             <span className="bulk-allocation-modal__field-label bulk-allocation-modal__field-label--required">通路分組</span>
             <Select className="bulk-allocation-modal__location-select" value={targetL2Id ?? undefined}
-              options={l2TargetOptions} onChange={handleTargetL2Change} placeholder="請選擇通路分組" allowClear />
+              options={l2TargetOptions} onChange={handleTargetL2Change} placeholder="請選擇通路分組" allowClear={!sourceL2Id} />
           </div>
           {showTargetL3Dropdown && (
             <div className="bulk-allocation-modal__location-field">
@@ -1544,34 +1554,35 @@ function BulkAllocationModal({ open, selectedRows, filter, l2Hubs, l3Channels, o
   );
 }
 
-function createAllocationLine() {
+function createAllocationLine(sourceL2Id = null) {
   return {
     id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    l2Id: null,
+    l2Id: sourceL2Id,
     l3Id: null,
     qty: null,
     remark: '',
   };
 }
 
-function AllocationLocationCell({ line, l2Hubs, l3Channels, onL2Change, onL3Change }) {
+function AllocationLocationCell({ line, l2Hubs, l3Channels, sourceL2Id, onL2Change, onL3Change }) {
   const rowFilter = useMemo(
     () => ({ viewMode: 'channel', l2Id: line.l2Id, l3Id: line.l3Id }),
     [line.l2Id, line.l3Id],
   );
   const showL3 = shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
-  const l2Options = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2Options = useMemo(() => buildAllocatableL2Options(l2Hubs, sourceL2Id), [l2Hubs, sourceL2Id]);
   const l3Options = useMemo(() => {
     if (!line.l2Id) return [];
     return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels));
   }, [line.l2Id, l3Channels]);
+  const l2Locked = Boolean(sourceL2Id);
 
   return (
     <div className="allocation-modal__location-cell">
       <div className="allocation-modal__location-field">
         <span className="allocation-modal__field-label allocation-modal__field-label--required">通路分組</span>
         <Select value={line.l2Id ?? undefined} options={l2Options} onChange={onL2Change}
-          placeholder="請選擇通路分組" allowClear />
+          placeholder="請選擇通路分組" allowClear={!l2Locked} />
       </div>
       {showL3 && (
         <div className="allocation-modal__location-field">
@@ -1590,11 +1601,12 @@ function AllocationModal({ open, product, filter, l2Hubs, l3Channels, onClose, o
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
     [filter, l2Hubs, l3Channels],
   );
+  const sourceL2Id = useMemo(() => getAllocationSourceL2Id(filter), [filter]);
 
   useEffect(() => {
     if (!open) return;
-    setLines([createAllocationLine()]);
-  }, [open, product?.key]);
+    setLines([createAllocationLine(sourceL2Id)]);
+  }, [open, product?.key, sourceL2Id]);
 
   const updateLine = (lineId, patch) => {
     setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
@@ -1613,7 +1625,7 @@ function AllocationModal({ open, product, filter, l2Hubs, l3Channels, onClose, o
     {
       title: '配貨位置', width: 220,
       render: (_, line) => (
-        <AllocationLocationCell line={line} l2Hubs={l2Hubs} l3Channels={l3Channels}
+        <AllocationLocationCell line={line} l2Hubs={l2Hubs} l3Channels={l3Channels} sourceL2Id={sourceL2Id}
           onL2Change={(l2Id) => updateLine(line.id, { l2Id: l2Id ?? null, l3Id: null })}
           onL3Change={(l3Id) => updateLine(line.id, { l3Id: l3Id ?? null })} />
       ),
@@ -1645,7 +1657,7 @@ function AllocationModal({ open, product, filter, l2Hubs, l3Channels, onClose, o
       title: '', width: 48, align: 'center',
       render: (_, line, index) => index === lines.length - 1 ? (
         <Button type="text" icon={<PlusOutlined />} className="allocation-modal__add-row"
-          onClick={() => setLines((prev) => [...prev, createAllocationLine()])} />
+          onClick={() => setLines((prev) => [...prev, createAllocationLine(sourceL2Id)])} />
       ) : null,
     },
   ];

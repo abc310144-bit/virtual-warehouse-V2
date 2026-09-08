@@ -4,9 +4,10 @@ import { InfoCircleOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
 import {
-  buildL2GroupOptions,
+  buildAllocatableL2Options,
   buildL3ChannelOptions,
   getActiveL3ByL2,
+  getAllocationSourceL2Id,
   shouldShowL3SalesChannelFilter,
 } from '../../hooks/useL2L3CascadeFilter';
 import type { HierarchyFilterState, L2HubListItem, L3Channel } from '../../types/virtualWarehouse';
@@ -69,8 +70,12 @@ export function BulkAllocationModal({
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
     [filter, l2Hubs, l3Channels],
   );
+  const sourceL2Id = useMemo(() => getAllocationSourceL2Id(filter), [filter]);
 
-  const l2TargetOptions = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2TargetOptions = useMemo(
+    () => buildAllocatableL2Options(l2Hubs, sourceL2Id),
+    [l2Hubs, sourceL2Id],
+  );
 
   const targetFilter = useMemo<HierarchyFilterState>(
     () => ({ viewMode: 'channel', l2Id: targetL2Id, l3Id: targetL3Id }),
@@ -91,11 +96,11 @@ export function BulkAllocationModal({
 
   useEffect(() => {
     if (!open) return;
-    setTargetL2Id(null);
+    setTargetL2Id(sourceL2Id);
     setTargetL3Id(null);
     setQuantities({});
     setRemarks({});
-  }, [open]);
+  }, [open, sourceL2Id]);
 
   useEffect(() => {
     if (!targetL2Id) {
@@ -245,7 +250,7 @@ export function BulkAllocationModal({
               options={l2TargetOptions}
               onChange={handleTargetL2Change}
               placeholder="請選擇通路分組"
-              allowClear
+              allowClear={!sourceL2Id}
             />
           </div>
           {showTargetL3Dropdown && (

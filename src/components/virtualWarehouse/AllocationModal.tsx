@@ -4,9 +4,10 @@ import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
 import {
-  buildL2GroupOptions,
+  buildAllocatableL2Options,
   buildL3ChannelOptions,
   getActiveL3ByL2,
+  getAllocationSourceL2Id,
   shouldShowL3SalesChannelFilter,
 } from '../../hooks/useL2L3CascadeFilter';
 import type { HierarchyFilterState, L2HubListItem, L3Channel } from '../../types/virtualWarehouse';
@@ -42,10 +43,10 @@ function HeaderWithTip({ title, tip }: { title: string; tip: string }) {
   );
 }
 
-function createEmptyLine(): AllocationLine {
+function createEmptyLine(sourceL2Id: string | null = null): AllocationLine {
   return {
     id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    l2Id: null,
+    l2Id: sourceL2Id,
     l3Id: null,
     qty: null,
     remark: '',
@@ -56,12 +57,14 @@ function AllocationLocationCell({
   line,
   l2Hubs,
   l3Channels,
+  sourceL2Id,
   onL2Change,
   onL3Change,
 }: {
   line: AllocationLine;
   l2Hubs: L2HubListItem[];
   l3Channels: L3Channel[];
+  sourceL2Id: string | null;
   onL2Change: (l2Id: string | undefined) => void;
   onL3Change: (l3Id: string | undefined) => void;
 }) {
@@ -70,11 +73,15 @@ function AllocationLocationCell({
     [line.l2Id, line.l3Id],
   );
   const showL3 = shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
-  const l2Options = useMemo(() => buildL2GroupOptions(l2Hubs), [l2Hubs]);
+  const l2Options = useMemo(
+    () => buildAllocatableL2Options(l2Hubs, sourceL2Id),
+    [l2Hubs, sourceL2Id],
+  );
   const l3Options = useMemo(() => {
     if (!line.l2Id) return [];
     return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels));
   }, [line.l2Id, l3Channels]);
+  const l2Locked = Boolean(sourceL2Id);
 
   return (
     <div className="allocation-modal__location-cell">
@@ -87,7 +94,7 @@ function AllocationLocationCell({
           options={l2Options}
           onChange={onL2Change}
           placeholder="請選擇通路分組"
-          allowClear
+          allowClear={!l2Locked}
         />
       </div>
       {showL3 && (
@@ -125,11 +132,12 @@ export function AllocationModal({
     () => getSourceChannelLabel(filter, l2Hubs, l3Channels),
     [filter, l2Hubs, l3Channels],
   );
+  const sourceL2Id = useMemo(() => getAllocationSourceL2Id(filter), [filter]);
 
   useEffect(() => {
     if (!open) return;
-    setLines([createEmptyLine()]);
-  }, [open, product?.key]);
+    setLines([createEmptyLine(sourceL2Id)]);
+  }, [open, product?.key, sourceL2Id]);
 
   const updateLine = (lineId: string, patch: Partial<AllocationLine>) => {
     setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
@@ -148,7 +156,7 @@ export function AllocationModal({
   };
 
   const addLine = () => {
-    setLines((prev) => [...prev, createEmptyLine()]);
+    setLines((prev) => [...prev, createEmptyLine(sourceL2Id)]);
   };
 
   const maxQty = product?.allocatableQty ?? 0;
@@ -172,6 +180,7 @@ export function AllocationModal({
           line={line}
           l2Hubs={l2Hubs}
           l3Channels={l3Channels}
+          sourceL2Id={sourceL2Id}
           onL2Change={(l2Id) => handleL2Change(line.id, l2Id)}
           onL3Change={(l3Id) => handleL3Change(line.id, l3Id)}
         />
