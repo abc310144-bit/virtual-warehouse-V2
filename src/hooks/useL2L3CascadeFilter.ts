@@ -65,25 +65,72 @@ export function buildL2GroupOptions(l2Hubs: L2Hub[]): L2DropdownOption[] {
     .map((h) => ({ value: h.id, label: h.name }));
 }
 
-/** 來源已在通路分組時，配貨不可平移到其他分組 */
+/** 來源所在通路分組；總倉檢視時為 null */
 export function getAllocationSourceL2Id(filter: HierarchyFilterState): string | null {
   if (filter.viewMode !== 'channel' || !filter.l2Id) return null;
   return filter.l2Id;
 }
 
-/** 配貨目標通路分組：總倉可選全部；已在某分組則只能選該分組 */
-export function buildAllocatableL2Options(
-  l2Hubs: L2Hub[],
-  sourceL2Id: string | null,
-): L2DropdownOption[] {
-  const all = buildL2GroupOptions(l2Hubs);
-  if (!sourceL2Id) return all;
-  return all.filter((option) => option.value === sourceL2Id);
+/** 來源所在銷售通路；停在通路分組（尚未指定銷售通路）時為 null */
+export function getAllocationSourceL3Id(filter: HierarchyFilterState): string | null {
+  if (filter.viewMode !== 'channel' || !filter.l3Id) return null;
+  return filter.l3Id;
 }
 
-/** 建構銷售通路（L3）下拉選項 */
-export function buildL3ChannelOptions(channels: L3Channel[]): L3DropdownOption[] {
-  return channels.map((c) => ({ value: c.id, label: c.name }));
+/** 來源已在總倉時，不能再配回總倉 */
+export function canAllocateToMain(filter: HierarchyFilterState): boolean {
+  return filter.viewMode === 'channel' && Boolean(filter.l2Id);
+}
+
+export interface AllocationDestination {
+  toMain: boolean;
+  l2Id: string | null;
+  l3Id: string | null;
+}
+
+/**
+ * 配貨目標是否合法（不含數量）。
+ * 不能配回自己：總倉不配總倉、通路分組不可只配回自己、銷售通路不可再配到自己。
+ * 通路分組仍可配到所屬銷售通路。
+ */
+export function isAllocationDestinationValid(
+  filter: HierarchyFilterState,
+  target: AllocationDestination,
+): boolean {
+  const sourceL2Id = getAllocationSourceL2Id(filter);
+  const sourceL3Id = getAllocationSourceL3Id(filter);
+
+  if (target.toMain) return canAllocateToMain(filter);
+  if (!target.l2Id) return false;
+  if (sourceL3Id && target.l3Id === sourceL3Id) return false;
+  if (sourceL2Id && !sourceL3Id && target.l2Id === sourceL2Id && !target.l3Id) return false;
+  return true;
+}
+
+/** 目標仍是來源通路分組時，必須再選所屬銷售通路 */
+export function isSalesChannelRequired(
+  filter: HierarchyFilterState,
+  target: AllocationDestination,
+): boolean {
+  if (target.toMain) return false;
+  const sourceL2Id = getAllocationSourceL2Id(filter);
+  const sourceL3Id = getAllocationSourceL3Id(filter);
+  return Boolean(sourceL2Id && !sourceL3Id && target.l2Id === sourceL2Id);
+}
+
+/** 配貨目標通路分組：除了「只配回自己」之外，任一組都可選 */
+export function buildAllocatableL2Options(l2Hubs: L2Hub[]): L2DropdownOption[] {
+  return buildL2GroupOptions(l2Hubs);
+}
+
+/** 建構銷售通路（L3）下拉選項，排除來源自己 */
+export function buildL3ChannelOptions(
+  channels: L3Channel[],
+  excludeL3Id: string | null = null,
+): L3DropdownOption[] {
+  return channels
+    .filter((channel) => channel.id !== excludeL3Id)
+    .map((channel) => ({ value: channel.id, label: channel.name }));
 }
 
 

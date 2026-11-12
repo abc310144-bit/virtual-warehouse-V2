@@ -32,6 +32,10 @@
   font-weight: 500;
 }
 
+.allocation-modal__main-check {
+  white-space: nowrap;
+}
+
 .allocation-modal__location-cell {
   display: flex;
   flex-direction: column;

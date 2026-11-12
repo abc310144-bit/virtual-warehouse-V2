@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Input, InputNumber, Modal, Select, Space, Table, Tooltip } from 'antd';
+import { Button, Checkbox, Input, InputNumber, Modal, Select, Space, Table, Tooltip } from 'antd';
 import { InfoCircleOutlined, PlusOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { WarehouseProductRow } from '../../data/warehouseProductSeed';
 import {
   buildAllocatableL2Options,
   buildL3ChannelOptions,
+  canAllocateToMain,
   getActiveL3ByL2,
   getAllocationSourceL2Id,
+  getAllocationSourceL3Id,
+  isAllocationDestinationValid,
+  isSalesChannelRequired,
   shouldShowL3SalesChannelFilter,
 } from '../../hooks/useL2L3CascadeFilter';
 import type { HierarchyFilterState, L2HubListItem, L3Channel } from '../../types/virtualWarehouse';
@@ -26,6 +30,7 @@ export interface AllocationModalProps {
 
 interface AllocationLine {
   id: string;
+  toMain: boolean;
   l2Id: string | null;
   l3Id: string | null;
   qty: number | null;
@@ -46,6 +51,7 @@ function HeaderWithTip({ title, tip }: { title: string; tip: string }) {
 function createEmptyLine(sourceL2Id: string | null = null): AllocationLine {
   return {
     id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    toMain: false,
     l2Id: sourceL2Id,
     l3Id: null,
     qty: null,
@@ -57,14 +63,16 @@ function AllocationLocationCell({
   line,
   l2Hubs,
   l3Channels,
-  sourceL2Id,
+  sourceL3Id,
+  l3Required,
   onL2Change,
   onL3Change,
 }: {
   line: AllocationLine;
   l2Hubs: L2HubListItem[];
   l3Channels: L3Channel[];
-  sourceL2Id: string | null;
+  sourceL3Id: string | null;
+  l3Required: boolean;
   onL2Change: (l2Id: string | undefined) => void;
   onL3Change: (l3Id: string | undefined) => void;
 }) {
@@ -72,42 +80,51 @@ function AllocationLocationCell({
     () => ({ viewMode: 'channel', l2Id: line.l2Id, l3Id: line.l3Id }),
     [line.l2Id, line.l3Id],
   );
-  const showL3 = shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
-  const l2Options = useMemo(
-    () => buildAllocatableL2Options(l2Hubs, sourceL2Id),
-    [l2Hubs, sourceL2Id],
-  );
+  const showL3 =
+    line.toMain || shouldShowL3SalesChannelFilter(rowFilter, l3Channels, l2Hubs);
+  const l2Options = useMemo(() => buildAllocatableL2Options(l2Hubs), [l2Hubs]);
   const l3Options = useMemo(() => {
-    if (!line.l2Id) return [];
-    return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels));
-  }, [line.l2Id, l3Channels]);
-  const l2Locked = Boolean(sourceL2Id);
+    if (!line.l2Id || line.toMain) return [];
+    return buildL3ChannelOptions(getActiveL3ByL2(line.l2Id, l3Channels), sourceL3Id);
+  }, [line.l2Id, line.toMain, l3Channels, sourceL3Id]);
 
   return (
     <div className="allocation-modal__location-cell">
       <div className="allocation-modal__location-field">
-        <span className="allocation-modal__field-label allocation-modal__field-label--required">
+        <span
+          className={`allocation-modal__field-label${
+            line.toMain ? '' : ' allocation-modal__field-label--required'
+          }`}
+        >
           通路分組
         </span>
         <Select
-          value={line.l2Id ?? undefined}
+          value={line.toMain ? undefined : (line.l2Id ?? undefined)}
           options={l2Options}
           onChange={onL2Change}
           placeholder="請選擇通路分組"
-          allowClear={!l2Locked}
+          disabled={line.toMain}
+          allowClear
         />
       </div>
       {showL3 && (
         <div className="allocation-modal__location-field">
-          <span className="allocation-modal__field-label">
+          <span
+            className={`allocation-modal__field-label${
+              l3Required ? ' allocation-modal__field-label--required' : ''
+            }`}
+          >
             銷售通路
-            <span className="allocation-modal__field-optional">（非必填）</span>
+            {!l3Required && (
+              <span className="allocation-modal__field-optional">（非必填）</span>
+            )}
           </span>
           <Select
-            value={line.l3Id ?? undefined}
+            value={line.toMain ? undefined : (line.l3Id ?? undefined)}
             options={l3Options}
             onChange={onL3Change}
             placeholder="請選擇銷售通路"
+            disabled={line.toMain}
             allowClear
           />
         </div>
@@ -116,7 +133,7 @@ function AllocationLocationCell({
   );
 }
 
-/** 單筆配貨彈窗：點擊商品列「配貨」開啟，可多列配至不同通路 */
+/** 單筆配貨彈窗：一列一個目的地，最左可勾總倉，勾了該列配回總倉 */
 export function AllocationModal({
   open,
   product,
@@ -133,6 +150,8 @@ export function AllocationModal({
     [filter, l2Hubs, l3Channels],
   );
   const sourceL2Id = useMemo(() => getAllocationSourceL2Id(filter), [filter]);
+  const sourceL3Id = useMemo(() => getAllocationSourceL3Id(filter), [filter]);
+  const allowMain = canAllocateToMain(filter);
 
   useEffect(() => {
     if (!open) return;
@@ -143,8 +162,13 @@ export function AllocationModal({
     setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
   };
 
+  const handleToMainChange = (lineId: string, checked: boolean) => {
+    if (!allowMain) return;
+    updateLine(lineId, checked ? { toMain: true, l2Id: null, l3Id: null } : { toMain: false });
+  };
+
   const handleL2Change = (lineId: string, l2Id: string | undefined) => {
-    updateLine(lineId, { l2Id: l2Id ?? null, l3Id: null });
+    updateLine(lineId, { toMain: false, l2Id: l2Id ?? null, l3Id: null });
   };
 
   const handleL3Change = (lineId: string, l3Id: string | undefined) => {
@@ -163,15 +187,30 @@ export function AllocationModal({
 
   const canConfirm = useMemo(() => {
     if (!product || maxQty <= 0) return false;
-    const validLines = lines.filter(
-      (line) => line.l2Id && line.qty != null && line.qty > 0 && line.qty <= maxQty,
-    );
+    const validLines = lines.filter((line) => {
+      if (line.qty == null || line.qty <= 0 || line.qty > maxQty) return false;
+      return isAllocationDestinationValid(filter, line);
+    });
     if (validLines.length === 0) return false;
     const totalQty = validLines.reduce((sum, line) => sum + (line.qty ?? 0), 0);
     return totalQty <= maxQty;
-  }, [product, maxQty, lines]);
+  }, [product, maxQty, lines, filter]);
 
   const columns: ColumnsType<AllocationLine> = [
+    {
+      title: '',
+      width: 88,
+      render: (_, line) => (
+        <Checkbox
+          className="allocation-modal__main-check"
+          checked={line.toMain}
+          disabled={!allowMain}
+          onChange={(event) => handleToMainChange(line.id, event.target.checked)}
+        >
+          總倉
+        </Checkbox>
+      ),
+    },
     {
       title: '配貨位置',
       width: 220,
@@ -180,7 +219,8 @@ export function AllocationModal({
           line={line}
           l2Hubs={l2Hubs}
           l3Channels={l3Channels}
-          sourceL2Id={sourceL2Id}
+          sourceL3Id={sourceL3Id}
+          l3Required={isSalesChannelRequired(filter, line)}
           onL2Change={(l2Id) => handleL2Change(line.id, l2Id)}
           onL3Change={(l3Id) => handleL3Change(line.id, l3Id)}
         />
@@ -196,7 +236,7 @@ export function AllocationModal({
           max={maxQty || undefined}
           precision={0}
           value={line.qty ?? null}
-          disabled={!line.l2Id || maxQty <= 0}
+          disabled={(!line.toMain && !line.l2Id) || maxQty <= 0}
           onChange={(value) => handleQtyChange(line.id, value)}
         />
       ),
@@ -205,7 +245,7 @@ export function AllocationModal({
       title: (
         <HeaderWithTip
           title="配貨前可分配數"
-          tip="配貨至目標通路分組前，該商品於目標位置的可分配數量"
+          tip="配貨至目標位置前，該商品於目標位置的可分配數量"
         />
       ),
       width: 130,
@@ -256,7 +296,7 @@ export function AllocationModal({
       title="配貨"
       open={open}
       onCancel={onClose}
-      width={980}
+      width={1080}
       destroyOnClose
       footer={
         <Space>
